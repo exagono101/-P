@@ -596,33 +596,79 @@ async def on_guild_channel_delete(channel):
         count = registrar_accion(autor.id, 'canales', channel.guild.id)
 
         # restaurar canal usando snapshot si existe
-        snaps = cargar_snapshots()
+        snaps      = cargar_snapshots()
         guild_snap = snaps.get(str(channel.guild.id), {})
 
         try:
             overwrites = channel.overwrites
+
+            # Si el canal tenía categoría pero ya no existe (fue eliminada también),
+            # intentar recrearla primero desde el snapshot
+            categoria_obj = channel.category
+            if channel.category is None and not isinstance(channel, discord.CategoryChannel):
+                # buscar en snapshot si este canal pertenecía a alguna categoría
+                for cat_id, cat_data in guild_snap.get('categories', {}).items():
+                    for ch_data in cat_data.get('channels', []):
+                        if ch_data['id'] == str(channel.id):
+                            # la categoría ya no existe en el servidor, recrearla
+                            cat_existente = channel.guild.get_channel(int(cat_id))
+                            if not cat_existente:
+                                try:
+                                    cat_existente = await channel.guild.create_category(
+                                        name=cat_data['name'],
+                                        reason=f'[AntiNuke] Restaurando categoría por {autor}',
+                                    )
+                                    await log_antinuke(
+                                        channel.guild, '♻️ Categoría Restaurada',
+                                        f'**Categoría:** `{cat_data["name"]}`\n**Eliminada por:** {autor.mention}\n**Restaurada:** {cat_existente.mention}',
+                                        0x00FF88,
+                                    )
+                                except Exception as e:
+                                    log.error(f'[AntiNuke] No pude restaurar categoría {cat_data["name"]}: {e}')
+                            categoria_obj = cat_existente
+                            break
+
             if isinstance(channel, discord.TextChannel):
                 nuevo = await channel.guild.create_text_channel(
                     name=channel.name, topic=channel.topic,
                     slowmode_delay=channel.slowmode_delay, nsfw=channel.nsfw,
-                    overwrites=overwrites, category=channel.category,
+                    overwrites=overwrites, category=categoria_obj,
                     reason=f'[AntiNuke] Restaurando canal por {autor}',
                 )
             elif isinstance(channel, discord.VoiceChannel):
                 nuevo = await channel.guild.create_voice_channel(
                     name=channel.name, bitrate=channel.bitrate,
                     user_limit=channel.user_limit, overwrites=overwrites,
-                    category=channel.category, reason=f'[AntiNuke] Restaurando canal por {autor}',
+                    category=categoria_obj, reason=f'[AntiNuke] Restaurando canal por {autor}',
                 )
             elif isinstance(channel, discord.CategoryChannel):
                 nuevo = await channel.guild.create_category(
                     name=channel.name, overwrites=overwrites,
                     reason=f'[AntiNuke] Restaurando categoría por {autor}',
                 )
+                # restaurar también los canales que estaban dentro según el snapshot
+                cat_snap = guild_snap.get('categories', {}).get(str(channel.id), {})
+                for ch_data in cat_snap.get('channels', []):
+                    try:
+                        if ch_data['type'] == 'text':
+                            await channel.guild.create_text_channel(
+                                name=ch_data['name'], topic=ch_data.get('topic'),
+                                slowmode_delay=ch_data.get('slowmode', 0),
+                                nsfw=ch_data.get('nsfw', False),
+                                category=nuevo,
+                                reason=f'[AntiNuke] Restaurando canal de categoría por {autor}',
+                            )
+                        elif ch_data['type'] == 'voice':
+                            await channel.guild.create_voice_channel(
+                                name=ch_data['name'], category=nuevo,
+                                reason=f'[AntiNuke] Restaurando canal de categoría por {autor}',
+                            )
+                    except Exception as e:
+                        log.error(f'[AntiNuke] No pude restaurar canal {ch_data["name"]} de categoría: {e}')
             else:
                 nuevo = await channel.guild.create_text_channel(
                     name=channel.name, overwrites=overwrites,
-                    category=channel.category, reason=f'[AntiNuke] Restaurando canal por {autor}',
+                    category=categoria_obj, reason=f'[AntiNuke] Restaurando canal por {autor}',
                 )
             try:
                 await nuevo.edit(position=channel.position)
