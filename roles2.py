@@ -1,6 +1,6 @@
 """
 Bot de Discord — versión 3
-Prefijo: , (coma) — igual que Greed
+Prefijo: ! — igual que Greed
 Slash commands sincronizados automáticamente al iniciar.
 """
 
@@ -45,7 +45,7 @@ FAMILIA_FILE  = 'familia.json'
 CUMPLE_FILE   = 'cumpleanos.json'
 SNAP_FILE     = 'server_snapshot.json'   # snapshots de canales/categorías
 
-PREFIX = ','
+PREFIX = '!'
 
 
 def cargar_config() -> dict:
@@ -1875,24 +1875,257 @@ async def roles_usuario(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 
+class RolesView(discord.ui.View):
+    def __init__(self, author_id: int, pages: list[discord.Embed]):
+        super().__init__(timeout=120)
+        self.author_id = author_id
+        self.pages     = pages
+        self.current   = 0
+
+    async def _guard(self, i: discord.Interaction) -> bool:
+        if i.user.id != self.author_id:
+            await i.response.send_message('❌ No es tu menú.', ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(emoji='◀️', style=discord.ButtonStyle.secondary)
+    async def btn_prev(self, i: discord.Interaction, _):
+        if not await self._guard(i):
+            return
+        self.current = (self.current - 1) % len(self.pages)
+        await i.response.edit_message(embed=self.pages[self.current], view=self)
+
+    @discord.ui.button(emoji='▶️', style=discord.ButtonStyle.secondary)
+    async def btn_next(self, i: discord.Interaction, _):
+        if not await self._guard(i):
+            return
+        self.current = (self.current + 1) % len(self.pages)
+        await i.response.edit_message(embed=self.pages[self.current], view=self)
+
+    @discord.ui.button(emoji='❌', style=discord.ButtonStyle.danger)
+    async def btn_close(self, i: discord.Interaction, _):
+        if not await self._guard(i):
+            return
+        await i.message.delete()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
 @bot.command(name='listar_roles', aliases=['lroles', 'roles'])
 async def listar_roles(ctx):
     roles = [r for r in reversed(ctx.guild.roles) if r != ctx.guild.default_role]
     if not roles:
         return await ctx.send('❌ Sin roles.')
-    paginas, chunk = [], ''
-    for r in roles:
-        linea = f'{r.mention} — `{r.id}` — {len(r.members)} miembros\n'
-        if len(chunk) + len(linea) > 900:
-            paginas.append(chunk)
-            chunk = ''
-        chunk += linea
-    if chunk:
-        paginas.append(chunk)
-    for i, p in enumerate(paginas, 1):
-        embed = discord.Embed(title=f'🎭 Roles ({i}/{len(paginas)})', description=p, color=0x5865F2)
-        await ctx.send(embed=embed)
 
+    ENTRIES_PER_PAGE = 10
+    total   = len(roles)
+    chunks  = [roles[i:i + ENTRIES_PER_PAGE] for i in range(0, total, ENTRIES_PER_PAGE)]
+    n_pages = len(chunks)
+    paginas = []
+
+    for idx, chunk in enumerate(chunks, 1):
+        desc = '\n'.join(f'{r.mention} ({r.id})' for r in chunk)
+        embed = discord.Embed(
+            title='Roles',
+            description=desc,
+            color=0x5865F2,
+        )
+        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url if ctx.guild.icon else discord.Embed.Empty)
+        embed.set_footer(text=f'Page {idx}/{n_pages} ({total} entries)')
+        paginas.append(embed)
+
+    view = RolesView(ctx.author.id, paginas)
+    await ctx.send(embed=paginas[0], view=view)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMBED BUILDER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COLORES_EMBED = {
+    'azul':     0x5865F2,
+    'rojo':     0xED4245,
+    'verde':    0x57F287,
+    'amarillo': 0xFEE75C,
+    'naranja':  0xE67E22,
+    'morado':   0x9B59B6,
+    'rosa':     0xFF73FA,
+    'blanco':   0xFFFFFF,
+    'negro':    0x23272A,
+    'cyan':     0x1ABC9C,
+}
+
+
+class EmbedModal(discord.ui.Modal):
+    def __init__(self, field: str, view: 'EmbedBuilderView'):
+        labels = {
+            'titulo':      ('✏️ Editar Título',       'Título',        'Escribe el título del embed...'),
+            'descripcion': ('📝 Editar Descripción',  'Descripción',   'Escribe el contenido del embed...'),
+            'footer':      ('🔖 Editar Footer',       'Footer',        'Texto del pie del embed...'),
+            'imagen':      ('🖼️ URL de Imagen',       'URL',           'https://...'),
+            'thumbnail':   ('🖼️ URL de Thumbnail',   'URL',           'https://...'),
+            'autor':       ('👤 Editar Autor',        'Nombre de Autor', 'Escribe el nombre del autor...'),
+        }
+        title, label, placeholder = labels[field]
+        super().__init__(title=title)
+        self.field     = field
+        self.view_ref  = view
+        self.input     = discord.ui.TextInput(
+            label=label,
+            placeholder=placeholder,
+            style=discord.TextStyle.paragraph if field == 'descripcion' else discord.TextStyle.short,
+            required=False,
+            max_length=4000 if field == 'descripcion' else 256,
+            default=getattr(view, field, ''),
+        )
+        self.add_item(self.input)
+
+    async def on_submit(self, i: discord.Interaction):
+        setattr(self.view_ref, self.field, self.input.value.strip())
+        await i.response.edit_message(embed=self.view_ref._build_preview(), view=self.view_ref)
+
+
+class ColorSelect(discord.ui.Select):
+    def __init__(self, view_ref: 'EmbedBuilderView'):
+        self.view_ref = view_ref
+        opts = [discord.SelectOption(label=name.capitalize(), value=name) for name in COLORES_EMBED]
+        super().__init__(placeholder='🎨 Elegir color...', options=opts, row=2)
+
+    async def callback(self, i: discord.Interaction):
+        if i.user.id != self.view_ref.author_id:
+            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
+        self.view_ref.color = COLORES_EMBED[self.values[0]]
+        await i.response.edit_message(embed=self.view_ref._build_preview(), view=self.view_ref)
+
+
+class EmbedBuilderView(discord.ui.View):
+    def __init__(self, author_id: int, canal_destino: discord.TextChannel):
+        super().__init__(timeout=300)
+        self.author_id      = author_id
+        self.canal_destino  = canal_destino
+        self.titulo         = ''
+        self.descripcion    = ''
+        self.footer         = ''
+        self.imagen         = ''
+        self.thumbnail      = ''
+        self.autor          = ''
+        self.color          = 0x5865F2
+        self.add_item(ColorSelect(self))
+
+    def _build_preview(self) -> discord.Embed:
+        embed = discord.Embed(
+            title=self.titulo       or None,
+            description=self.descripcion or '*(sin descripción)*',
+            color=self.color,
+        )
+        if self.autor:
+            embed.set_author(name=self.autor)
+        if self.footer:
+            embed.set_footer(text=self.footer)
+        if self.imagen:
+            embed.set_image(url=self.imagen)
+        if self.thumbnail:
+            embed.set_thumbnail(url=self.thumbnail)
+        embed.set_footer(
+            text=(self.footer + '  •  ' if self.footer else '') + '📋 Vista previa — usa los botones para editar'
+        )
+        return embed
+
+    async def _guard(self, i: discord.Interaction) -> bool:
+        if i.user.id != self.author_id:
+            await i.response.send_message('❌ No es tu menú.', ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label='Título', emoji='✏️', style=discord.ButtonStyle.secondary, row=0)
+    async def btn_titulo(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.response.send_modal(EmbedModal('titulo', self))
+
+    @discord.ui.button(label='Descripción', emoji='📝', style=discord.ButtonStyle.secondary, row=0)
+    async def btn_desc(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.response.send_modal(EmbedModal('descripcion', self))
+
+    @discord.ui.button(label='Footer', emoji='🔖', style=discord.ButtonStyle.secondary, row=0)
+    async def btn_footer(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.response.send_modal(EmbedModal('footer', self))
+
+    @discord.ui.button(label='Imagen', emoji='🖼️', style=discord.ButtonStyle.secondary, row=1)
+    async def btn_imagen(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.response.send_modal(EmbedModal('imagen', self))
+
+    @discord.ui.button(label='Thumbnail', emoji='🖼️', style=discord.ButtonStyle.secondary, row=1)
+    async def btn_thumb(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.response.send_modal(EmbedModal('thumbnail', self))
+
+    @discord.ui.button(label='Autor', emoji='👤', style=discord.ButtonStyle.secondary, row=1)
+    async def btn_autor(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.response.send_modal(EmbedModal('autor', self))
+
+    @discord.ui.button(label='Enviar', emoji='✅', style=discord.ButtonStyle.success, row=3)
+    async def btn_enviar(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        if not self.titulo and not self.descripcion:
+            return await i.response.send_message('❌ El embed necesita al menos un título o descripción.', ephemeral=True)
+        embed = discord.Embed(
+            title=self.titulo       or None,
+            description=self.descripcion or None,
+            color=self.color,
+        )
+        if self.autor:
+            embed.set_author(name=self.autor)
+        if self.footer:
+            embed.set_footer(text=self.footer)
+        if self.imagen:
+            embed.set_image(url=self.imagen)
+        if self.thumbnail:
+            embed.set_thumbnail(url=self.thumbnail)
+        try:
+            await self.canal_destino.send(embed=embed)
+            for item in self.children:
+                item.disabled = True
+            await i.response.edit_message(
+                content=f'✅ Embed enviado en {self.canal_destino.mention}',
+                embed=None,
+                view=self,
+            )
+        except discord.Forbidden:
+            await i.response.send_message(f'❌ Sin permisos para enviar en {self.canal_destino.mention}.', ephemeral=True)
+
+    @discord.ui.button(label='Cancelar', emoji='❌', style=discord.ButtonStyle.danger, row=3)
+    async def btn_cancelar(self, i: discord.Interaction, _):
+        if not await self._guard(i): return
+        await i.message.delete()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+@bot.command(name='embed', aliases=['createembed', 'makeembed'])
+@commands.check(es_staff)
+async def crear_embed(ctx, canal: discord.TextChannel = None):
+    """Abre el constructor de embeds interactivo.
+    Uso: !embed [#canal]  — si no se especifica canal, usa el actual."""
+    canal = canal or ctx.channel
+    view  = EmbedBuilderView(ctx.author.id, canal)
+    await ctx.message.delete()
+    await ctx.send(
+        content=f'🛠️ **Constructor de Embed** → enviará en {canal.mention}',
+        embed=view._build_preview(),
+        view=view,
+        ephemeral=False,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 @bot.command(name='nick', aliases=['apodo'])
 @commands.check(es_admin)
@@ -2109,8 +2342,8 @@ async def dar_acceso(ctx, member: discord.Member):
         roles_a_quitar = [r] if r and r in member.roles else []
     try:
         if roles_a_quitar:
-            await member.remove_roles(*roles_a_quitar, reason=f',v — {ctx.author}')
-        await member.add_roles(rol_dar, reason=f',v — acceso por {ctx.author}')
+            await member.remove_roles(*roles_a_quitar, reason=f'!v — {ctx.author}')
+        await member.add_roles(rol_dar, reason=f'!v — acceso por {ctx.author}')
     except discord.Forbidden:
         return await ctx.send('❌ Sin permisos suficientes.')
     embed_ok = discord.Embed(title='✅ Acceso Concedido', color=0x00FF00)
