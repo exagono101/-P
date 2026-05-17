@@ -1,6 +1,6 @@
 """
 Bot de Discord — versión 3
-Prefijo: ! — igual que Greed
+Prefijo: , (coma) — igual que Greed
 Slash commands sincronizados automáticamente al iniciar.
 """
 
@@ -596,79 +596,33 @@ async def on_guild_channel_delete(channel):
         count = registrar_accion(autor.id, 'canales', channel.guild.id)
 
         # restaurar canal usando snapshot si existe
-        snaps      = cargar_snapshots()
+        snaps = cargar_snapshots()
         guild_snap = snaps.get(str(channel.guild.id), {})
 
         try:
             overwrites = channel.overwrites
-
-            # Si el canal tenía categoría pero ya no existe (fue eliminada también),
-            # intentar recrearla primero desde el snapshot
-            categoria_obj = channel.category
-            if channel.category is None and not isinstance(channel, discord.CategoryChannel):
-                # buscar en snapshot si este canal pertenecía a alguna categoría
-                for cat_id, cat_data in guild_snap.get('categories', {}).items():
-                    for ch_data in cat_data.get('channels', []):
-                        if ch_data['id'] == str(channel.id):
-                            # la categoría ya no existe en el servidor, recrearla
-                            cat_existente = channel.guild.get_channel(int(cat_id))
-                            if not cat_existente:
-                                try:
-                                    cat_existente = await channel.guild.create_category(
-                                        name=cat_data['name'],
-                                        reason=f'[AntiNuke] Restaurando categoría por {autor}',
-                                    )
-                                    await log_antinuke(
-                                        channel.guild, '♻️ Categoría Restaurada',
-                                        f'**Categoría:** `{cat_data["name"]}`\n**Eliminada por:** {autor.mention}\n**Restaurada:** {cat_existente.mention}',
-                                        0x00FF88,
-                                    )
-                                except Exception as e:
-                                    log.error(f'[AntiNuke] No pude restaurar categoría {cat_data["name"]}: {e}')
-                            categoria_obj = cat_existente
-                            break
-
             if isinstance(channel, discord.TextChannel):
                 nuevo = await channel.guild.create_text_channel(
                     name=channel.name, topic=channel.topic,
                     slowmode_delay=channel.slowmode_delay, nsfw=channel.nsfw,
-                    overwrites=overwrites, category=categoria_obj,
+                    overwrites=overwrites, category=channel.category,
                     reason=f'[AntiNuke] Restaurando canal por {autor}',
                 )
             elif isinstance(channel, discord.VoiceChannel):
                 nuevo = await channel.guild.create_voice_channel(
                     name=channel.name, bitrate=channel.bitrate,
                     user_limit=channel.user_limit, overwrites=overwrites,
-                    category=categoria_obj, reason=f'[AntiNuke] Restaurando canal por {autor}',
+                    category=channel.category, reason=f'[AntiNuke] Restaurando canal por {autor}',
                 )
             elif isinstance(channel, discord.CategoryChannel):
                 nuevo = await channel.guild.create_category(
                     name=channel.name, overwrites=overwrites,
                     reason=f'[AntiNuke] Restaurando categoría por {autor}',
                 )
-                # restaurar también los canales que estaban dentro según el snapshot
-                cat_snap = guild_snap.get('categories', {}).get(str(channel.id), {})
-                for ch_data in cat_snap.get('channels', []):
-                    try:
-                        if ch_data['type'] == 'text':
-                            await channel.guild.create_text_channel(
-                                name=ch_data['name'], topic=ch_data.get('topic'),
-                                slowmode_delay=ch_data.get('slowmode', 0),
-                                nsfw=ch_data.get('nsfw', False),
-                                category=nuevo,
-                                reason=f'[AntiNuke] Restaurando canal de categoría por {autor}',
-                            )
-                        elif ch_data['type'] == 'voice':
-                            await channel.guild.create_voice_channel(
-                                name=ch_data['name'], category=nuevo,
-                                reason=f'[AntiNuke] Restaurando canal de categoría por {autor}',
-                            )
-                    except Exception as e:
-                        log.error(f'[AntiNuke] No pude restaurar canal {ch_data["name"]} de categoría: {e}')
             else:
                 nuevo = await channel.guild.create_text_channel(
                     name=channel.name, overwrites=overwrites,
-                    category=categoria_obj, reason=f'[AntiNuke] Restaurando canal por {autor}',
+                    category=channel.category, reason=f'[AntiNuke] Restaurando canal por {autor}',
                 )
             try:
                 await nuevo.edit(position=channel.position)
@@ -974,7 +928,7 @@ async def antinuke_status(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_ayuda', aliases=['nuke_ayuda'])
+@bot.command(name='an_ayuda')
 async def an_ayuda(ctx):
     p = PREFIX
     embed = discord.Embed(title='🛡️ Comandos AntiNuke', color=0x5865F2)
@@ -987,7 +941,7 @@ async def an_ayuda(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_activar', aliases=['activar'])
+@bot.command(name='an_activar')
 @commands.check(es_owner_an)
 async def an_activar(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -996,7 +950,7 @@ async def an_activar(ctx):
     await ctx.send('🟢 **AntiNuke activado.**')
 
 
-@bot.command(name='an_desactivar', aliases=['desactivar'])
+@bot.command(name='an_desactivar')
 @commands.check(es_owner_an)
 async def an_desactivar(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1005,7 +959,7 @@ async def an_desactivar(ctx):
     await ctx.send('🔴 **AntiNuke desactivado.**')
 
 
-@bot.command(name='an_whitelist', aliases=['whitelist'])
+@bot.command(name='an_whitelist')
 @commands.check(es_owner_an)
 async def an_whitelist(ctx, member: discord.Member = None):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1025,7 +979,7 @@ async def an_whitelist(ctx, member: discord.Member = None):
     await ctx.send(msg)
 
 
-@bot.command(name='an_accion', aliases=['accion'])
+@bot.command(name='an_accion')
 @commands.check(es_owner_an)
 async def an_accion(ctx, accion: str):
     if accion not in ('ban', 'kick', 'strip', 'timeout'):
@@ -1036,7 +990,7 @@ async def an_accion(ctx, accion: str):
     await ctx.send(f'✅ Acción cambiada a `{accion}`.')
 
 
-@bot.command(name='an_limite', aliases=['limite'])
+@bot.command(name='an_limite')
 @commands.check(es_owner_an)
 async def an_limite(ctx, tipo: str, cantidad: int):
     tipos_validos = ('ban', 'kick', 'roles', 'canales', 'webhooks', 'roles_peligrosos')
@@ -1048,7 +1002,7 @@ async def an_limite(ctx, tipo: str, cantidad: int):
     await ctx.send(f'✅ Límite de `{tipo}` → `{cantidad}`.')
 
 
-@bot.command(name='an_ventana', aliases=['ventana'])
+@bot.command(name='an_ventana')
 @commands.check(es_owner_an)
 async def an_ventana(ctx, segundos: int):
     if not 5 <= segundos <= 120:
@@ -1059,7 +1013,7 @@ async def an_ventana(ctx, segundos: int):
     await ctx.send(f'✅ Ventana → `{segundos}s`.')
 
 
-@bot.command(name='an_logs', aliases=['logs'])
+@bot.command(name='an_logs')
 @commands.check(es_owner_an)
 async def an_logs(ctx, canal: discord.TextChannel = None):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1068,7 +1022,7 @@ async def an_logs(ctx, canal: discord.TextChannel = None):
     await ctx.send(f'✅ Logs → {canal.mention if canal else "desactivados"}.')
 
 
-@bot.command(name='an_owner', aliases=['owner'])
+@bot.command(name='an_owner')
 @commands.check(lambda ctx: ctx.author.id == ctx.guild.owner_id)
 async def an_owner(ctx, member: discord.Member):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1078,7 +1032,7 @@ async def an_owner(ctx, member: discord.Member):
 
 
 # AntiRaid
-@bot.command(name='an_antiraid', aliases=['antiraid'])
+@bot.command(name='an_antiraid')
 @commands.check(es_owner_an)
 async def an_antiraid_status(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1091,7 +1045,7 @@ async def an_antiraid_status(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_antiraid_on', aliases=['antiraid_on'])
+@bot.command(name='an_antiraid_on')
 @commands.check(es_owner_an)
 async def an_antiraid_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1100,7 +1054,7 @@ async def an_antiraid_on(ctx):
     await ctx.send('🟢 **AntiRaid activado.**')
 
 
-@bot.command(name='an_antiraid_off', aliases=['antiraid_off'])
+@bot.command(name='an_antiraid_off')
 @commands.check(es_owner_an)
 async def an_antiraid_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1109,7 +1063,7 @@ async def an_antiraid_off(ctx):
     await ctx.send('🔴 **AntiRaid desactivado.**')
 
 
-@bot.command(name='an_antiraid_config', aliases=['antiraid_config'])
+@bot.command(name='an_antiraid_config')
 @commands.check(es_owner_an)
 async def an_antiraid_config(ctx, joins: int, ventana: int, accion: str = 'kick'):
     if accion not in ('ban', 'kick'):
@@ -1121,7 +1075,7 @@ async def an_antiraid_config(ctx, joins: int, ventana: int, accion: str = 'kick'
 
 
 # AntiLinks
-@bot.command(name='an_antilinks_on', aliases=['antilinks_on'])
+@bot.command(name='an_antilinks_on')
 @commands.check(es_owner_an)
 async def an_antilinks_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1130,7 +1084,7 @@ async def an_antilinks_on(ctx):
     await ctx.send('🟢 **AntiLinks activado.**')
 
 
-@bot.command(name='an_antilinks_off', aliases=['antilinks_off'])
+@bot.command(name='an_antilinks_off')
 @commands.check(es_owner_an)
 async def an_antilinks_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1139,7 +1093,7 @@ async def an_antilinks_off(ctx):
     await ctx.send('🔴 **AntiLinks desactivado.**')
 
 
-@bot.command(name='an_links_canal', aliases=['links_canal'])
+@bot.command(name='an_links_canal')
 @commands.check(es_owner_an)
 async def an_links_canal(ctx, canal: discord.TextChannel):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1155,7 +1109,7 @@ async def an_links_canal(ctx, canal: discord.TextChannel):
     await ctx.send(msg)
 
 
-@bot.command(name='an_links_rol', aliases=['links_rol'])
+@bot.command(name='an_links_rol')
 @commands.check(es_owner_an)
 async def an_links_rol(ctx, *, nombre_rol: str):
     rol = discord.utils.find(lambda r: r.name.lower() == nombre_rol.lower(), ctx.guild.roles)
@@ -1175,7 +1129,7 @@ async def an_links_rol(ctx, *, nombre_rol: str):
 
 
 # AntiSpam
-@bot.command(name='an_antispam_on', aliases=['antispam_on'])
+@bot.command(name='an_antispam_on')
 @commands.check(es_owner_an)
 async def an_antispam_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1184,7 +1138,7 @@ async def an_antispam_on(ctx):
     await ctx.send('🟢 **AntiSpam activado.**')
 
 
-@bot.command(name='an_antispam_off', aliases=['antispam_off'])
+@bot.command(name='an_antispam_off')
 @commands.check(es_owner_an)
 async def an_antispam_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1193,7 +1147,7 @@ async def an_antispam_off(ctx):
     await ctx.send('🔴 **AntiSpam desactivado.**')
 
 
-@bot.command(name='an_spam_config', aliases=['spam_config'])
+@bot.command(name='an_spam_config')
 @commands.check(es_owner_an)
 async def an_spam_config(ctx, mensajes: int, ventana: int):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1203,7 +1157,7 @@ async def an_spam_config(ctx, mensajes: int, ventana: int):
 
 
 # AntiBot
-@bot.command(name='an_antibot_on', aliases=['antibot_on'])
+@bot.command(name='an_antibot_on')
 @commands.check(es_owner_an)
 async def an_antibot_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1212,7 +1166,7 @@ async def an_antibot_on(ctx):
     await ctx.send('🟢 **AntiBot activado.**')
 
 
-@bot.command(name='an_antibot_off', aliases=['antibot_off'])
+@bot.command(name='an_antibot_off')
 @commands.check(es_owner_an)
 async def an_antibot_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1222,7 +1176,7 @@ async def an_antibot_off(ctx):
 
 
 # Verificación
-@bot.command(name='an_ver_setup', aliases=['ver_setup'])
+@bot.command(name='an_ver_setup')
 @commands.check(es_owner_an)
 async def an_ver_setup(ctx, canal: discord.TextChannel, rol_ver: discord.Role, rol_no_ver: discord.Role = None):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1235,7 +1189,7 @@ async def an_ver_setup(ctx, canal: discord.TextChannel, rol_ver: discord.Role, r
     await ctx.send(f'✅ Verificación configurada — canal: {canal.mention} | rol: {rol_ver.mention}')
 
 
-@bot.command(name='an_ver_on', aliases=['ver_on'])
+@bot.command(name='an_ver_on')
 @commands.check(es_owner_an)
 async def an_ver_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1244,7 +1198,7 @@ async def an_ver_on(ctx):
     await ctx.send('🟢 **Verificación activada.**')
 
 
-@bot.command(name='an_ver_off', aliases=['ver_off'])
+@bot.command(name='an_ver_off')
 @commands.check(es_owner_an)
 async def an_ver_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1254,7 +1208,7 @@ async def an_ver_off(ctx):
 
 
 # Snapshot
-@bot.command(name='an_snapshot', aliases=['snapshot'])
+@bot.command(name='an_snapshot')
 @commands.check(es_owner_an)
 async def an_snapshot(ctx):
     snaps = cargar_snapshots()
@@ -1271,7 +1225,7 @@ async def an_snapshot(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_restore', aliases=['restore'])
+@bot.command(name='an_restore')
 @commands.check(es_owner_an)
 async def an_restore(ctx):
     snaps = cargar_snapshots()
@@ -1518,58 +1472,27 @@ async def masskick(ctx, *members: discord.Member):
     await ctx.send(f'👢 Kickeados: **{count}** | Errores: **{errors}**')
 
 
-# ─── Ban List ─────────────────────────────────────────────────────────────────
-
-@bot.command(name='an_banlist', aliases=['banlist'])
-@commands.check(es_staff)
-async def an_banlist(ctx):
-    """Muestra la lista de usuarios baneados del servidor (paginada de 10 en 10)."""
+@bot.command(name='banlist')
+@commands.check(es_admin)
+async def banlist(ctx):
     bans = [entry async for entry in ctx.guild.bans()]
     if not bans:
         return await ctx.send('✅ No hay usuarios baneados.')
-
-    paginas = []
-    por_pag = 10
-    for i in range(0, len(bans), por_pag):
-        chunk = bans[i:i + por_pag]
+    chunks, chunk = [], ''
+    for i, e in enumerate(bans, 1):
+        linea = f'`{i}.` **{e.user}** (`{e.user.id}`) — {e.reason or "Sin razón"}\n'
+        if len(chunk) + len(linea) > 1900:
+            chunks.append(chunk)
+            chunk = ''
+        chunk += linea
+    if chunk:
+        chunks.append(chunk)
+    for i, c in enumerate(chunks, 1):
         embed = discord.Embed(
-            title=f'🔨 Lista de Bans — Página {i // por_pag + 1}/{(len(bans) - 1) // por_pag + 1}',
-            color=0xFF0000,
-            description='\n'.join(
-                f'`{e.user.id}` **{e.user}** — {e.reason or "Sin razón"}' for e in chunk
-            ),
+            title=f'📋 Banlist ({i}/{len(chunks)}) — {len(bans)} bans',
+            description=c, color=0xFF0000,
         )
-        embed.set_footer(text=f'Total: {len(bans)} baneados')
-        paginas.append(embed)
-
-    if len(paginas) == 1:
-        return await ctx.send(embed=paginas[0])
-
-    # Paginador simple
-    idx  = 0
-    btns = discord.ui.View(timeout=120)
-
-    async def _prev(i: discord.Interaction):
-        nonlocal idx
-        if i.user.id != ctx.author.id:
-            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
-        idx = (idx - 1) % len(paginas)
-        await i.response.edit_message(embed=paginas[idx])
-
-    async def _next(i: discord.Interaction):
-        nonlocal idx
-        if i.user.id != ctx.author.id:
-            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
-        idx = (idx + 1) % len(paginas)
-        await i.response.edit_message(embed=paginas[idx])
-
-    b1 = discord.ui.Button(emoji='◀️', style=discord.ButtonStyle.secondary)
-    b2 = discord.ui.Button(emoji='▶️', style=discord.ButtonStyle.primary)
-    b1.callback = _prev
-    b2.callback = _next
-    btns.add_item(b1)
-    btns.add_item(b2)
-    await ctx.send(embed=paginas[0], view=btns)
+        await ctx.send(embed=embed)
 
 
 @bot.command(name='limpiar', aliases=['clear', 'purge'])
@@ -1756,77 +1679,6 @@ async def dar_rol(ctx, member: discord.Member, *, nombre_rol: str):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='r')
-@commands.check(es_admin)
-async def r_cmd(ctx, accion: str, *, nombre_rol: str):
-    """Dar rol por ID o crear un rol nuevo.
-    Uso: ,r <id_usuario> <nombre del rol>
-         ,r create <nombre del rol>"""
-
-    # ── MODO CREATE ──────────────────────────────────────────────────────────
-    if accion.lower() == 'create':
-        existente = discord.utils.find(lambda r: r.name.lower() == nombre_rol.lower(), ctx.guild.roles)
-        if existente:
-            return await ctx.send(f'⚠️ Ya existe el rol **{existente.name}** ({existente.mention}).')
-        try:
-            nuevo_rol = await ctx.guild.create_role(
-                name=nombre_rol,
-                reason=f'[,r create] Creado por {ctx.author}',
-            )
-        except discord.Forbidden:
-            return await ctx.send('❌ No tengo permisos para crear roles.')
-        embed = discord.Embed(title='✅ Rol Creado', color=nuevo_rol.color)
-        embed.add_field(name='🎭 Rol',   value=nuevo_rol.mention,    inline=True)
-        embed.add_field(name='🆔 ID',    value=f'`{nuevo_rol.id}`',  inline=True)
-        embed.add_field(name='🛡️ Por',   value=ctx.author.mention,   inline=True)
-        embed.set_footer(text='Usa ,r <id_usuario> para asignarlo, o edítalo desde el servidor.')
-        return await ctx.send(embed=embed)
-
-    # ── MODO DAR ROL POR ID ───────────────────────────────────────────────────
-    try:
-        user_id = int(accion)
-    except ValueError:
-        return await ctx.send(
-            f'❌ Uso correcto:\n'
-            f'• `,r <id_usuario> <rol>` — dar rol por ID\n'
-            f'• `,r create <nombre>` — crear un rol nuevo'
-        )
-
-    member = ctx.guild.get_member(user_id)
-    if not member:
-        try:
-            member = await ctx.guild.fetch_member(user_id)
-        except discord.NotFound:
-            return await ctx.send(f'❌ No encontré ningún miembro con la ID `{user_id}` en este servidor.')
-        except discord.Forbidden:
-            return await ctx.send('❌ No tengo permisos para buscar ese miembro.')
-
-    # buscar rol (exacto primero, luego parcial)
-    rol = discord.utils.find(lambda r: r.name.lower() == nombre_rol.lower(), ctx.guild.roles)
-    if not rol:
-        similares = [r for r in ctx.guild.roles if nombre_rol.lower() in r.name.lower()]
-        if len(similares) == 1:
-            rol = similares[0]
-        elif similares:
-            lista = ', '.join(f'`{r.name}`' for r in similares[:5])
-            return await ctx.send(f'❌ Rol ambiguo. ¿Quisiste decir? {lista}')
-        else:
-            return await ctx.send(f'❌ No encontré el rol `{nombre_rol}`.')
-
-    if rol >= ctx.guild.me.top_role:
-        return await ctx.send('❌ Ese rol está por encima del mío en la jerarquía.')
-    if rol in member.roles:
-        return await ctx.send(f'⚠️ {member.mention} ya tiene **{rol.name}**.')
-
-    await member.add_roles(rol, reason=f'[,r] Dado por {ctx.author}')
-    embed = discord.Embed(title='✅ Rol Dado', color=rol.color)
-    embed.add_field(name='👤 Usuario', value=f'{member.mention} (`{member.id}`)', inline=True)
-    embed.add_field(name='🎭 Rol',     value=rol.mention,                          inline=True)
-    embed.add_field(name='🛡️ Por',     value=ctx.author.mention,                   inline=True)
-    await ctx.send(embed=embed)
-
-
-
 @bot.command(name='quitar_rol', aliases=['qr', 'removerole'])
 @commands.check(es_admin)
 async def quitar_rol(ctx, member: discord.Member, *, nombre_rol: str):
@@ -1875,73 +1727,83 @@ async def roles_usuario(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 
-class RolesView(discord.ui.View):
-    def __init__(self, author_id: int, pages: list[discord.Embed]):
-        super().__init__(timeout=120)
-        self.author_id = author_id
-        self.pages     = pages
-        self.current   = 0
-
-    async def _guard(self, i: discord.Interaction) -> bool:
-        if i.user.id != self.author_id:
-            await i.response.send_message('❌ No es tu menú.', ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(emoji='◀️', style=discord.ButtonStyle.secondary)
-    async def btn_prev(self, i: discord.Interaction, _):
-        if not await self._guard(i):
-            return
-        self.current = (self.current - 1) % len(self.pages)
-        await i.response.edit_message(embed=self.pages[self.current], view=self)
-
-    @discord.ui.button(emoji='▶️', style=discord.ButtonStyle.secondary)
-    async def btn_next(self, i: discord.Interaction, _):
-        if not await self._guard(i):
-            return
-        self.current = (self.current + 1) % len(self.pages)
-        await i.response.edit_message(embed=self.pages[self.current], view=self)
-
-    @discord.ui.button(emoji='❌', style=discord.ButtonStyle.danger)
-    async def btn_close(self, i: discord.Interaction, _):
-        if not await self._guard(i):
-            return
-        await i.message.delete()
-
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
-
-
-@bot.command(name='listar_roles', aliases=['lroles', 'roles'])
+@bot.command(name='listar_roles', aliases=['lroles'])
 async def listar_roles(ctx):
     roles = [r for r in reversed(ctx.guild.roles) if r != ctx.guild.default_role]
     if not roles:
         return await ctx.send('❌ Sin roles.')
+    paginas, chunk = [], ''
+    for r in roles:
+        linea = f'{r.mention} — `{r.id}` — {len(r.members)} miembros\n'
+        if len(chunk) + len(linea) > 900:
+            paginas.append(chunk)
+            chunk = ''
+        chunk += linea
+    if chunk:
+        paginas.append(chunk)
+    for i, p in enumerate(paginas, 1):
+        embed = discord.Embed(title=f'🎭 Roles ({i}/{len(paginas)})', description=p, color=0x5865F2)
+        await ctx.send(embed=embed)
 
-    ENTRIES_PER_PAGE = 10
-    total   = len(roles)
-    chunks  = [roles[i:i + ENTRIES_PER_PAGE] for i in range(0, total, ENTRIES_PER_PAGE)]
-    n_pages = len(chunks)
-    paginas = []
 
-    for idx, chunk in enumerate(chunks, 1):
-        desc = '\n'.join(f'{r.mention} ({r.id})' for r in chunk)
-        embed = discord.Embed(
-            title='Roles',
-            description=desc,
-            color=0x5865F2,
-        )
-        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url if ctx.guild.icon else discord.Embed.Empty)
-        embed.set_footer(text=f'Page {idx}/{n_pages} ({total} entries)')
-        paginas.append(embed)
+@bot.command(name='nick', aliases=['apodo'])
+@commands.check(es_admin)
+async def nick(ctx, member: discord.Member, *, nuevo: str = None):
+    try:
+        viejo = member.display_name
+        await member.edit(nick=nuevo)
+        if nuevo:
+            await ctx.send(f'✅ Nick: **{viejo}** → **{nuevo}**')
+        else:
+            await ctx.send(f'✅ Nick de {member.mention} restablecido.')
+    except discord.Forbidden:
+        await ctx.send('❌ Sin permisos para cambiar ese nick.')
 
-    view = RolesView(ctx.author.id, paginas)
-    await ctx.send(embed=paginas[0], view=view)
+
+@bot.command(name='massnick')
+@commands.check(es_admin)
+async def massnick(ctx, *, nuevo: str):
+    msg   = await ctx.send(f'⏳ Cambiando nicks...')
+    count = 0
+    for m in ctx.guild.members:
+        if not m.bot:
+            try:
+                await m.edit(nick=nuevo)
+                count += 1
+            except Exception:
+                pass
+    await msg.edit(content=f'✅ Nick **{nuevo}** en **{count}** miembros.')
+
+
+@bot.command(name='anuncio', aliases=['ann'])
+@commands.check(es_admin)
+async def anuncio(ctx, canal: discord.TextChannel = None, *, mensaje: str):
+    canal = canal or ctx.channel
+    embed = discord.Embed(
+        title='📢 Anuncio', description=mensaje,
+        color=0xFFD700, timestamp=datetime.now(timezone.utc),
+    )
+    embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
+    await canal.send('@everyone', embed=embed)
+    if canal != ctx.channel:
+        await ctx.send(f'✅ Anuncio en {canal.mention}.')
+
+
+@bot.command(name='embed_msg', aliases=['emb'])
+@commands.check(es_admin)
+async def embed_msg(ctx, canal: discord.TextChannel = None, titulo: str = 'Mensaje', *, mensaje: str):
+    canal = canal or ctx.channel
+    embed = discord.Embed(
+        title=titulo, description=mensaje,
+        color=0x5865F2, timestamp=datetime.now(timezone.utc),
+    )
+    await canal.send(embed=embed)
+    if canal != ctx.channel:
+        await ctx.send(f'✅ Embed en {canal.mention}.')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# EMBED BUILDER
+# EMBED BUILDER INTERACTIVO
 # ═══════════════════════════════════════════════════════════════════════════════
 
 COLORES_EMBED = {
@@ -1961,18 +1823,18 @@ COLORES_EMBED = {
 class EmbedModal(discord.ui.Modal):
     def __init__(self, field: str, view: 'EmbedBuilderView'):
         labels = {
-            'titulo':      ('✏️ Editar Título',       'Título',        'Escribe el título del embed...'),
-            'descripcion': ('📝 Editar Descripción',  'Descripción',   'Escribe el contenido del embed...'),
-            'footer':      ('🔖 Editar Footer',       'Footer',        'Texto del pie del embed...'),
-            'imagen':      ('🖼️ URL de Imagen',       'URL',           'https://...'),
-            'thumbnail':   ('🖼️ URL de Thumbnail',   'URL',           'https://...'),
-            'autor':       ('👤 Editar Autor',        'Nombre de Autor', 'Escribe el nombre del autor...'),
+            'titulo':      ('✏️ Editar Título',      'Título',          'Escribe el título del embed...'),
+            'descripcion': ('📝 Editar Descripción', 'Descripción',     'Escribe el contenido del embed...'),
+            'footer':      ('🔖 Editar Footer',      'Footer',          'Texto del pie del embed...'),
+            'imagen':      ('🖼️ URL de Imagen',      'URL',             'https://...'),
+            'thumbnail':   ('🖼️ URL de Thumbnail',  'URL',             'https://...'),
+            'autor':       ('👤 Editar Autor',       'Nombre de Autor', 'Escribe el nombre del autor...'),
         }
         title, label, placeholder = labels[field]
         super().__init__(title=title)
-        self.field     = field
-        self.view_ref  = view
-        self.input     = discord.ui.TextInput(
+        self.field    = field
+        self.view_ref = view
+        self.input    = discord.ui.TextInput(
             label=label,
             placeholder=placeholder,
             style=discord.TextStyle.paragraph if field == 'descripcion' else discord.TextStyle.short,
@@ -2003,27 +1865,25 @@ class ColorSelect(discord.ui.Select):
 class EmbedBuilderView(discord.ui.View):
     def __init__(self, author_id: int, canal_destino: discord.TextChannel):
         super().__init__(timeout=300)
-        self.author_id      = author_id
-        self.canal_destino  = canal_destino
-        self.titulo         = ''
-        self.descripcion    = ''
-        self.footer         = ''
-        self.imagen         = ''
-        self.thumbnail      = ''
-        self.autor          = ''
-        self.color          = 0x5865F2
+        self.author_id     = author_id
+        self.canal_destino = canal_destino
+        self.titulo        = ''
+        self.descripcion   = ''
+        self.footer        = ''
+        self.imagen        = ''
+        self.thumbnail     = ''
+        self.autor         = ''
+        self.color         = 0x5865F2
         self.add_item(ColorSelect(self))
 
     def _build_preview(self) -> discord.Embed:
         embed = discord.Embed(
-            title=self.titulo       or None,
+            title=self.titulo or None,
             description=self.descripcion or '*(sin descripción)*',
             color=self.color,
         )
         if self.autor:
             embed.set_author(name=self.autor)
-        if self.footer:
-            embed.set_footer(text=self.footer)
         if self.imagen:
             embed.set_image(url=self.imagen)
         if self.thumbnail:
@@ -2073,9 +1933,9 @@ class EmbedBuilderView(discord.ui.View):
     async def btn_enviar(self, i: discord.Interaction, _):
         if not await self._guard(i): return
         if not self.titulo and not self.descripcion:
-            return await i.response.send_message('❌ El embed necesita al menos un título o descripción.', ephemeral=True)
+            return await i.response.send_message('❌ El embed necesita al menos título o descripción.', ephemeral=True)
         embed = discord.Embed(
-            title=self.titulo       or None,
+            title=self.titulo or None,
             description=self.descripcion or None,
             color=self.color,
         )
@@ -2113,126 +1973,19 @@ class EmbedBuilderView(discord.ui.View):
 @commands.check(es_staff)
 async def crear_embed(ctx, canal: discord.TextChannel = None):
     """Abre el constructor de embeds interactivo.
-    Uso: !embed [#canal]  — si no se especifica canal, usa el actual."""
+    Uso: ,embed [#canal]  — si no se especifica canal, usa el actual."""
     canal = canal or ctx.channel
     view  = EmbedBuilderView(ctx.author.id, canal)
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
     await ctx.send(
         content=f'🛠️ **Constructor de Embed** → enviará en {canal.mention}',
         embed=view._build_preview(),
         view=view,
         ephemeral=False,
     )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-@bot.command(name='nick', aliases=['apodo'])
-@commands.check(es_admin)
-async def nick(ctx, member: discord.Member, *, nuevo: str = None):
-    try:
-        viejo = member.display_name
-        await member.edit(nick=nuevo)
-        if nuevo:
-            await ctx.send(f'✅ Nick: **{viejo}** → **{nuevo}**')
-        else:
-            await ctx.send(f'✅ Nick de {member.mention} restablecido.')
-    except discord.Forbidden:
-        await ctx.send('❌ Sin permisos para cambiar ese nick.')
-
-
-@bot.command(name='massnick')
-@commands.check(es_admin)
-async def massnick(ctx, *, nuevo: str):
-    msg   = await ctx.send(f'⏳ Cambiando nicks...')
-    count = 0
-    for m in ctx.guild.members:
-        if not m.bot:
-            try:
-                await m.edit(nick=nuevo)
-                count += 1
-            except Exception:
-                pass
-    await msg.edit(content=f'✅ Nick **{nuevo}** en **{count}** miembros.')
-
-
-@bot.command(name='fn')
-@commands.check(es_admin)
-async def fn(ctx, member: discord.Member, *, apodo: str):
-    """Fuerza un apodo permanente a un usuario. Si intenta cambiarlo, el bot lo restaura.
-    Uso: ,fn @usuario apodo"""
-    try:
-        await member.edit(nick=apodo, reason=f'[FN] Apodo forzado por {ctx.author}')
-    except discord.Forbidden:
-        return await ctx.send('❌ No tengo permisos para cambiar ese nick (¿tiene un rol superior al mío?).')
-    gid = str(ctx.guild.id)
-    uid = str(member.id)
-    _fn_forzados.setdefault(gid, {})[uid] = apodo
-    embed = discord.Embed(title='📌 Apodo Forzado', color=0xFF8C00)
-    embed.add_field(name='👤 Usuario',  value=member.mention,  inline=True)
-    embed.add_field(name='📝 Apodo',    value=f'**{apodo}**',  inline=True)
-    embed.add_field(name='🛡️ Por',      value=ctx.author.mention, inline=True)
-    embed.set_footer(text='El bot restaurará el apodo si el usuario intenta cambiarlo.')
-    await ctx.send(embed=embed)
-
-
-@bot.command(name='unfn')
-@commands.check(es_admin)
-async def unfn(ctx, member: discord.Member):
-    """Libera el apodo forzado de un usuario.
-    Uso: ,unfn @usuario"""
-    gid = str(ctx.guild.id)
-    uid = str(member.id)
-    if uid not in _fn_forzados.get(gid, {}):
-        return await ctx.send(f'⚠️ {member.mention} no tiene apodo forzado.')
-    del _fn_forzados[gid][uid]
-    if not _fn_forzados[gid]:
-        del _fn_forzados[gid]
-    await ctx.send(f'✅ Apodo forzado de {member.mention} **liberado**. Ya puede cambiar su nick.')
-
-
-@bot.command(name='fnlist')
-@commands.check(es_admin)
-async def fnlist(ctx):
-    """Muestra todos los usuarios con apodo forzado en el servidor."""
-    gid  = str(ctx.guild.id)
-    data = _fn_forzados.get(gid, {})
-    if not data:
-        return await ctx.send('✅ No hay usuarios con apodo forzado.')
-    embed = discord.Embed(title='📌 Apodos Forzados', color=0xFF8C00)
-    for uid, apodo in data.items():
-        m = ctx.guild.get_member(int(uid))
-        nombre = m.mention if m else f'<@{uid}>'
-        embed.add_field(name=nombre, value=f'`{apodo}`', inline=True)
-    embed.set_footer(text=f'{len(data)} usuario(s) con apodo forzado')
-    await ctx.send(embed=embed)
-
-
-@bot.command(name='anuncio', aliases=['ann'])
-@commands.check(es_admin)
-async def anuncio(ctx, canal: discord.TextChannel = None, *, mensaje: str):
-    canal = canal or ctx.channel
-    embed = discord.Embed(
-        title='📢 Anuncio', description=mensaje,
-        color=0xFFD700, timestamp=datetime.now(timezone.utc),
-    )
-    embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
-    await canal.send('@everyone', embed=embed)
-    if canal != ctx.channel:
-        await ctx.send(f'✅ Anuncio en {canal.mention}.')
-
-
-@bot.command(name='embed_msg', aliases=['emb'])
-@commands.check(es_admin)
-async def embed_msg(ctx, canal: discord.TextChannel = None, titulo: str = 'Mensaje', *, mensaje: str):
-    canal = canal or ctx.channel
-    embed = discord.Embed(
-        title=titulo, description=mensaje,
-        color=0x5865F2, timestamp=datetime.now(timezone.utc),
-    )
-    await canal.send(embed=embed)
-    if canal != ctx.channel:
-        await ctx.send(f'✅ Embed en {canal.mention}.')
 
 
 # ─── Acceso rápido (,v) ──────────────────────────────────────────────────────
@@ -2342,8 +2095,8 @@ async def dar_acceso(ctx, member: discord.Member):
         roles_a_quitar = [r] if r and r in member.roles else []
     try:
         if roles_a_quitar:
-            await member.remove_roles(*roles_a_quitar, reason=f'!v — {ctx.author}')
-        await member.add_roles(rol_dar, reason=f'!v — acceso por {ctx.author}')
+            await member.remove_roles(*roles_a_quitar, reason=f',v — {ctx.author}')
+        await member.add_roles(rol_dar, reason=f',v — acceso por {ctx.author}')
     except discord.Forbidden:
         return await ctx.send('❌ Sin permisos suficientes.')
     embed_ok = discord.Embed(title='✅ Acceso Concedido', color=0x00FF00)
@@ -3456,9 +3209,6 @@ async def on_raw_reaction_remove_rroles(payload: discord.RawReactionActionEvent)
 STICKY_FILE = 'sticky.json'
 _sticky_lock: dict = {}
 
-# {guild_id: {user_id: apodo_forzado}}  — persiste en memoria mientras el bot corra
-_fn_forzados: dict = {}
-
 
 def cargar_sticky() -> dict:
     if os.path.exists(STICKY_FILE):
@@ -4459,14 +4209,11 @@ def _build_ayuda_pages() -> list:
          f'`{p}softban` `{p}massban` `{p}masskick` `{p}banlist`\n'
          f'`{p}warn` `{p}warns` `{p}clearwarns` `{p}delwarn` `{p}historial`\n'
          f'`{p}limpiar` `{p}limpiar_bots` `{p}limpiar_usuario`\n'
-         f'`{p}gag` `{p}ungag` `{p}nick` `{p}massnick`\n'
-         f'`{p}fn @u <apodo>` `{p}unfn @u` `{p}fnlist` — Apodo forzado permanente'),
+         f'`{p}gag` `{p}ungag` `{p}nick` `{p}massnick`'),
         ('💬', 'Canales y Roles',
          f'`{p}lock/unlock` `{p}lockall/unlockall` `{p}hide/show`\n'
          f'`{p}slowmode` `{p}topic` `{p}rc` `{p}cc` `{p}ec` `{p}clone` `{p}nsfw`\n'
          f'`{p}dar_rol` `{p}quitar_rol` `{p}crear_rol` `{p}eliminar_rol`\n'
-         f'`{p}r <id> <rol>` — Dar rol por ID de usuario\n'
-         f'`{p}r create <nombre>` — Crear rol nuevo\n'
          f'`{p}listar_roles` `{p}roles_usuario` `{p}rolinfo` `{p}canalinfo`\n'
          f'`{p}v @u` — Dar acceso · `{p}anuncio` `{p}emb`'),
         ('⚙️', 'Configuración del Servidor',
@@ -4724,23 +4471,6 @@ async def on_raw_reaction_add_all(payload: discord.RawReactionActionEvent):
 @bot.event
 async def on_raw_reaction_remove_all(payload: discord.RawReactionActionEvent):
     await on_raw_reaction_remove_rroles(payload)
-
-
-@bot.event
-async def on_member_update_fn(before: discord.Member, after: discord.Member):
-    """Restaura el apodo forzado si el usuario lo cambia."""
-    if before.nick == after.nick:
-        return
-    gid = str(after.guild.id)
-    uid = str(after.id)
-    apodo = _fn_forzados.get(gid, {}).get(uid)
-    if not apodo:
-        return
-    if after.nick != apodo:
-        try:
-            await after.edit(nick=apodo, reason='[FN] Restaurando apodo forzado')
-        except discord.Forbidden:
-            pass
 
 
 @bot.event
