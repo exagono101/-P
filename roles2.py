@@ -1806,6 +1806,58 @@ async def massnick(ctx, *, nuevo: str):
     await msg.edit(content=f'✅ Nick **{nuevo}** en **{count}** miembros.')
 
 
+@bot.command(name='fn')
+@commands.check(es_admin)
+async def fn(ctx, member: discord.Member, *, apodo: str):
+    """Fuerza un apodo permanente a un usuario. Si intenta cambiarlo, el bot lo restaura.
+    Uso: ,fn @usuario apodo"""
+    try:
+        await member.edit(nick=apodo, reason=f'[FN] Apodo forzado por {ctx.author}')
+    except discord.Forbidden:
+        return await ctx.send('❌ No tengo permisos para cambiar ese nick (¿tiene un rol superior al mío?).')
+    gid = str(ctx.guild.id)
+    uid = str(member.id)
+    _fn_forzados.setdefault(gid, {})[uid] = apodo
+    embed = discord.Embed(title='📌 Apodo Forzado', color=0xFF8C00)
+    embed.add_field(name='👤 Usuario',  value=member.mention,  inline=True)
+    embed.add_field(name='📝 Apodo',    value=f'**{apodo}**',  inline=True)
+    embed.add_field(name='🛡️ Por',      value=ctx.author.mention, inline=True)
+    embed.set_footer(text='El bot restaurará el apodo si el usuario intenta cambiarlo.')
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='unfn')
+@commands.check(es_admin)
+async def unfn(ctx, member: discord.Member):
+    """Libera el apodo forzado de un usuario.
+    Uso: ,unfn @usuario"""
+    gid = str(ctx.guild.id)
+    uid = str(member.id)
+    if uid not in _fn_forzados.get(gid, {}):
+        return await ctx.send(f'⚠️ {member.mention} no tiene apodo forzado.')
+    del _fn_forzados[gid][uid]
+    if not _fn_forzados[gid]:
+        del _fn_forzados[gid]
+    await ctx.send(f'✅ Apodo forzado de {member.mention} **liberado**. Ya puede cambiar su nick.')
+
+
+@bot.command(name='fnlist')
+@commands.check(es_admin)
+async def fnlist(ctx):
+    """Muestra todos los usuarios con apodo forzado en el servidor."""
+    gid  = str(ctx.guild.id)
+    data = _fn_forzados.get(gid, {})
+    if not data:
+        return await ctx.send('✅ No hay usuarios con apodo forzado.')
+    embed = discord.Embed(title='📌 Apodos Forzados', color=0xFF8C00)
+    for uid, apodo in data.items():
+        m = ctx.guild.get_member(int(uid))
+        nombre = m.mention if m else f'<@{uid}>'
+        embed.add_field(name=nombre, value=f'`{apodo}`', inline=True)
+    embed.set_footer(text=f'{len(data)} usuario(s) con apodo forzado')
+    await ctx.send(embed=embed)
+
+
 @bot.command(name='anuncio', aliases=['ann'])
 @commands.check(es_admin)
 async def anuncio(ctx, canal: discord.TextChannel = None, *, mensaje: str):
@@ -3054,6 +3106,9 @@ async def on_raw_reaction_remove_rroles(payload: discord.RawReactionActionEvent)
 STICKY_FILE = 'sticky.json'
 _sticky_lock: dict = {}
 
+# {guild_id: {user_id: apodo_forzado}}  — persiste en memoria mientras el bot corra
+_fn_forzados: dict = {}
+
 
 def cargar_sticky() -> dict:
     if os.path.exists(STICKY_FILE):
@@ -4054,7 +4109,8 @@ def _build_ayuda_pages() -> list:
          f'`{p}softban` `{p}massban` `{p}masskick` `{p}banlist`\n'
          f'`{p}warn` `{p}warns` `{p}clearwarns` `{p}delwarn` `{p}historial`\n'
          f'`{p}limpiar` `{p}limpiar_bots` `{p}limpiar_usuario`\n'
-         f'`{p}gag` `{p}ungag` `{p}nick` `{p}massnick`'),
+         f'`{p}gag` `{p}ungag` `{p}nick` `{p}massnick`\n'
+         f'`{p}fn @u <apodo>` `{p}unfn @u` `{p}fnlist` — Apodo forzado permanente'),
         ('💬', 'Canales y Roles',
          f'`{p}lock/unlock` `{p}lockall/unlockall` `{p}hide/show`\n'
          f'`{p}slowmode` `{p}topic` `{p}rc` `{p}cc` `{p}ec` `{p}clone` `{p}nsfw`\n'
@@ -4316,6 +4372,23 @@ async def on_raw_reaction_add_all(payload: discord.RawReactionActionEvent):
 @bot.event
 async def on_raw_reaction_remove_all(payload: discord.RawReactionActionEvent):
     await on_raw_reaction_remove_rroles(payload)
+
+
+@bot.event
+async def on_member_update_fn(before: discord.Member, after: discord.Member):
+    """Restaura el apodo forzado si el usuario lo cambia."""
+    if before.nick == after.nick:
+        return
+    gid = str(after.guild.id)
+    uid = str(after.id)
+    apodo = _fn_forzados.get(gid, {}).get(uid)
+    if not apodo:
+        return
+    if after.nick != apodo:
+        try:
+            await after.edit(nick=apodo, reason='[FN] Restaurando apodo forzado')
+        except discord.Forbidden:
+            pass
 
 
 @bot.event
