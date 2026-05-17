@@ -1710,6 +1710,47 @@ async def dar_rol(ctx, member: discord.Member, *, nombre_rol: str):
     await ctx.send(embed=embed)
 
 
+@bot.command(name='r')
+@commands.check(es_admin)
+async def r_cmd(ctx, user_id: int, *, nombre_rol: str):
+    """Da un rol a un usuario por su ID (aunque no esté en el servidor visible).
+    Uso: ,r 123456789 Nombre del Rol"""
+    # buscar miembro
+    member = ctx.guild.get_member(user_id)
+    if not member:
+        try:
+            member = await ctx.guild.fetch_member(user_id)
+        except discord.NotFound:
+            return await ctx.send(f'❌ No encontré ningún miembro con la ID `{user_id}` en este servidor.')
+        except discord.Forbidden:
+            return await ctx.send('❌ No tengo permisos para buscar ese miembro.')
+
+    # buscar rol (exacto primero, luego parcial)
+    rol = discord.utils.find(lambda r: r.name.lower() == nombre_rol.lower(), ctx.guild.roles)
+    if not rol:
+        similares = [r for r in ctx.guild.roles if nombre_rol.lower() in r.name.lower()]
+        if len(similares) == 1:
+            rol = similares[0]
+        elif similares:
+            lista = ', '.join(f'`{r.name}`' for r in similares[:5])
+            return await ctx.send(f'❌ Rol ambiguo. ¿Quisiste decir? {lista}')
+        else:
+            return await ctx.send(f'❌ No encontré el rol `{nombre_rol}`.')
+
+    if rol >= ctx.guild.me.top_role:
+        return await ctx.send('❌ Ese rol está por encima del mío en la jerarquía.')
+    if rol in member.roles:
+        return await ctx.send(f'⚠️ {member.mention} ya tiene **{rol.name}**.')
+
+    await member.add_roles(rol, reason=f'[,r] Dado por {ctx.author}')
+    embed = discord.Embed(title='✅ Rol Dado', color=rol.color)
+    embed.add_field(name='👤 Usuario', value=f'{member.mention} (`{member.id}`)', inline=True)
+    embed.add_field(name='🎭 Rol',     value=rol.mention,                          inline=True)
+    embed.add_field(name='🛡️ Por',     value=ctx.author.mention,                   inline=True)
+    await ctx.send(embed=embed)
+
+
+
 @bot.command(name='quitar_rol', aliases=['qr', 'removerole'])
 @commands.check(es_admin)
 async def quitar_rol(ctx, member: discord.Member, *, nombre_rol: str):
@@ -4115,6 +4156,7 @@ def _build_ayuda_pages() -> list:
          f'`{p}lock/unlock` `{p}lockall/unlockall` `{p}hide/show`\n'
          f'`{p}slowmode` `{p}topic` `{p}rc` `{p}cc` `{p}ec` `{p}clone` `{p}nsfw`\n'
          f'`{p}dar_rol` `{p}quitar_rol` `{p}crear_rol` `{p}eliminar_rol`\n'
+         f'`{p}r <id> <rol>` — Dar rol por ID de usuario\n'
          f'`{p}listar_roles` `{p}roles_usuario` `{p}rolinfo` `{p}canalinfo`\n'
          f'`{p}v @u` — Dar acceso · `{p}anuncio` `{p}emb`'),
         ('⚙️', 'Configuración del Servidor',
