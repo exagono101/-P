@@ -114,33 +114,6 @@ ANTINUKE_DEFAULT: dict = {
     },
     'warn_sistema': {},
     'mute_rol': None,
-    'antiinvite': {'activo': False, 'whitelist_roles': []},
-    'antimentionspam': {'activo': False, 'limite': 5, 'ventana': 10},
-    'lockdown': {'activo': False, 'canales_bloqueados': []},
-    'massnick': {'activo': False, 'limite': 5, 'ventana': 30},
-    'msglog': {
-        'activo': False,
-        'canal': None,
-        'eventos': {
-            'mensaje_borrado':  True,
-            'mensaje_editado':  True,
-            'miembro_join':     True,
-            'miembro_leave':    True,
-            'rol_dado':         True,
-            'rol_quitado':      True,
-            'canal_creado':     True,
-            'canal_eliminado':  True,
-            'nick_cambiado':    True,
-            'voz_join':         True,
-            'voz_leave':        True,
-            'voz_move':         True,
-            'ban':              True,
-            'unban':            True,
-            'kick':             True,
-            'timeout':          True,
-            'invite_creada':    True,
-        },
-    },
 }
 
 # Permisos considerados «peligrosos» para el antinuke de roles
@@ -184,11 +157,9 @@ def guardar_antinuke(cfg: dict, guild_id: int | None = None):
 
 
 # trackers en memoria
-_acciones:        dict = defaultdict(lambda: defaultdict(list))
-_joins_recents:   dict = defaultdict(list)
-_spam_tracker:    dict = defaultdict(lambda: defaultdict(list))
-_mention_tracker: dict = defaultdict(lambda: defaultdict(list))
-_nick_tracker:    dict = defaultdict(lambda: defaultdict(list))
+_acciones:      dict = defaultdict(lambda: defaultdict(list))
+_joins_recents: dict = defaultdict(list)
+_spam_tracker:  dict = defaultdict(lambda: defaultdict(list))
 
 
 def registrar_accion(user_id: int, tipo: str, guild_id: int = 0) -> int:
@@ -235,30 +206,6 @@ async def log_antinuke(guild: discord.Guild, titulo: str, desc: str, color: int 
         color=color, timestamp=datetime.now(timezone.utc),
     )
     embed.set_footer(text='AntiNuke — Sistema de Seguridad')
-    try:
-        await ch.send(embed=embed)
-    except Exception:
-        pass
-
-
-# ─── MsgLog helper ──────────────────────────────────────────────────────────
-async def log_msg(guild: discord.Guild, evento: str, embed: discord.Embed):
-    """Envía un embed al canal de logs de mensajes/eventos si el evento está activo."""
-    cfg   = cargar_antinuke(guild.id)
-    mlog  = cfg.get('msglog', {})
-    if not mlog.get('activo'):
-        return
-    ch_id = mlog.get('canal')
-    if not ch_id:
-        return
-    eventos_cfg = mlog.get('eventos', {})
-    if not eventos_cfg.get(evento, True):
-        return
-    ch = guild.get_channel(int(ch_id))
-    if not ch:
-        return
-    embed.set_footer(text=f'📋 MsgLog | {evento}')
-    embed.timestamp = datetime.now(timezone.utc)
     try:
         await ch.send(embed=embed)
     except Exception:
@@ -797,45 +744,6 @@ async def on_guild_update(before: discord.Guild, after: discord.Guild):
 
 
 @bot.event
-async def on_member_update(before: discord.Member, after: discord.Member):
-    """Detecta cambios masivos de apodo (mass-nick)."""
-    if before.nick == after.nick:
-        return
-    cfg = cargar_antinuke(before.guild.id)
-    if not cfg.get('activo'):
-        return
-    mn = cfg.get('massnick', {})
-    if not mn.get('activo'):
-        return
-    await asyncio.sleep(0.3)
-    try:
-        entries = [e async for e in before.guild.audit_logs(limit=3, action=discord.AuditLogAction.member_update)]
-        if not entries:
-            return
-        autor = entries[0].user
-        if autor.id == bot.user.id or es_seguro(autor.id, before.guild):
-            return
-        ahora   = time.time()
-        ventana = mn.get('ventana', 30)
-        limite  = mn.get('limite', 5)
-        gid     = before.guild.id
-        uid     = autor.id
-        _nick_tracker[gid][uid] = [t for t in _nick_tracker[gid][uid] if ahora - t <= ventana]
-        _nick_tracker[gid][uid].append(ahora)
-        count = len(_nick_tracker[gid][uid])
-        if count >= limite:
-            _nick_tracker[gid][uid] = []
-            m = await _obtener_miembro(before.guild, autor.id)
-            if m:
-                await ejecutar_castigo(before.guild, m, f'Mass-nick ({count} cambios en {ventana}s)')
-                await log_antinuke(before.guild, '✏️ Mass-Nick Detectado',
-                                   f'**Por:** {autor.mention}\n**Cambios:** {count} en {ventana}s\n'
-                                   f'**Acción:** `{cfg["accion"]}`', 0xFF9900)
-    except Exception as e:
-        log.error(f'[AntiNuke] on_member_update (massnick): {e}')
-
-
-@bot.event
 async def on_member_join(member: discord.Member):
     cfg = cargar_antinuke(member.guild.id)
 
@@ -911,22 +819,6 @@ async def on_message(message: discord.Message):
                 pass
             return
 
-    # AntiInvite (bloquea solo enlaces de invitación a Discord)
-    ai = cfg.get('antiinvite', {})
-    if ai.get('activo') and not es_seguro(message.author.id, message.guild):
-        wl_r_ai = [int(x) for x in ai.get('whitelist_roles', [])]
-        tiene_invite = any(x in message.content for x in ['discord.gg/', 'discord.com/invite/'])
-        if tiene_invite and not any(r.id in wl_r_ai for r in message.author.roles):
-            try:
-                await message.delete()
-                await message.channel.send(
-                    f'🚫 {message.author.mention} No se permiten invitaciones de Discord aquí.', delete_after=5)
-                await log_antinuke(message.guild, '🚫 Invitación Bloqueada',
-                                   f'**Usuario:** {message.author.mention}\n**Canal:** {message.channel.mention}', 0xFF6600)
-            except Exception:
-                pass
-            return
-
     # AntiSpam
     asp = cfg.get('antispam', {})
     if asp.get('activo') and not es_seguro(message.author.id, message.guild):
@@ -947,41 +839,6 @@ async def on_message(message: discord.Message):
                                    f'**Usuario:** {message.author.mention}\n**Canal:** {message.channel.mention}')
             except Exception:
                 pass
-
-    # AntiMentionSpam (@everyone, @here, o muchos pings a roles/usuarios)
-    ams = cfg.get('antimentionspam', {})
-    if ams.get('activo') and not es_seguro(message.author.id, message.guild):
-        ahora_a   = time.time()
-        ventana_a = ams.get('ventana', 10)
-        limite_a  = ams.get('limite', 5)
-        gid_a     = message.guild.id
-        uid_a     = message.author.id
-        # Contar menciones peligrosas del mensaje
-        n_menciones = (
-            (1 if message.mention_everyone else 0)
-            + len(message.role_mentions)
-            + len(message.mentions)
-        )
-        if n_menciones > 0:
-            _mention_tracker[gid_a][uid_a] = [
-                t for t in _mention_tracker[gid_a][uid_a] if ahora_a - t <= ventana_a
-            ]
-            for _ in range(n_menciones):
-                _mention_tracker[gid_a][uid_a].append(ahora_a)
-            if len(_mention_tracker[gid_a][uid_a]) >= limite_a:
-                try:
-                    await message.delete()
-                    until_a = discord.utils.utcnow() + dt.timedelta(minutes=10)
-                    await message.author.timeout(until_a, reason='[AntiMentionSpam]')
-                    await message.channel.send(
-                        f'🔔 {message.author.mention} silenciado por spam de menciones.', delete_after=5)
-                    _mention_tracker[gid_a][uid_a] = []
-                    await log_antinuke(message.guild, '🔔 Spam de Menciones',
-                                       f'**Usuario:** {message.author.mention}\n'
-                                       f'**Canal:** {message.channel.mention}\n'
-                                       f'**Menciones:** {n_menciones}', 0xFF4444)
-                except Exception:
-                    pass
 
     await bot.process_commands(message)
 
@@ -1019,265 +876,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 await member.remove_roles(r, reason='Verificación')
             except Exception:
                 pass
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# EVENTOS MSGLOG — auditoría de mensajes y acciones del servidor
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# caché para detectar bulk-delete
-_msg_cache: dict = {}  # {message_id: (author_id, author_name, content, channel_id)}
-
-MAX_MSG_CACHE = 1000  # máx mensajes en caché
-
-
-@bot.event
-async def on_message_log_cache(message: discord.Message):
-    """Cachea mensajes para poder mostrar el contenido al borrarse."""
-    if message.guild and not message.author.bot:
-        _msg_cache[message.id] = (
-            message.author.id,
-            str(message.author),
-            message.content[:1000] if message.content else '[sin texto]',
-            message.channel.id,
-        )
-        # limpiar caché si crece demasiado
-        if len(_msg_cache) > MAX_MSG_CACHE:
-            oldest = sorted(_msg_cache.keys())[:100]
-            for k in oldest:
-                del _msg_cache[k]
-
-
-@bot.event
-async def on_message_delete(message: discord.Message):
-    if not message.guild or message.author.bot:
-        return
-    embed = discord.Embed(title='🗑️ Mensaje Borrado', color=0xFF4444)
-    embed.add_field(name='👤 Autor',   value=f'{message.author.mention} (`{message.author.id}`)', inline=True)
-    embed.add_field(name='📍 Canal',   value=message.channel.mention, inline=True)
-    contenido = message.content or '[sin texto / solo adjuntos]'
-    embed.add_field(name='📝 Contenido', value=contenido[:1024], inline=False)
-    if message.attachments:
-        embed.add_field(name='📎 Adjuntos', value='\n'.join(a.filename for a in message.attachments), inline=False)
-    embed.set_thumbnail(url=message.author.display_avatar.url)
-    await log_msg(message.guild, 'mensaje_borrado', embed)
-
-
-@bot.event
-async def on_bulk_message_delete(messages: list):
-    if not messages or not messages[0].guild:
-        return
-    guild = messages[0].guild
-    canal = messages[0].channel
-    embed = discord.Embed(
-        title='🗑️ Borrado Masivo de Mensajes',
-        description=f'**{len(messages)}** mensajes eliminados en {canal.mention}',
-        color=0xFF0000,
-    )
-    resumen = []
-    for m in messages[:10]:
-        txt = (m.content[:50] + '…') if len(m.content) > 50 else m.content
-        resumen.append(f'• **{m.author}:** {txt or "[adjunto]"}')
-    if resumen:
-        embed.add_field(name='Muestra', value='\n'.join(resumen), inline=False)
-    if len(messages) > 10:
-        embed.add_field(name='...', value=f'y {len(messages) - 10} más.', inline=False)
-    await log_msg(guild, 'mensaje_borrado', embed)
-
-
-@bot.event
-async def on_message_edit(before: discord.Message, after: discord.Message):
-    if not before.guild or before.author.bot:
-        return
-    if before.content == after.content:
-        return
-    embed = discord.Embed(title='✏️ Mensaje Editado', color=0xFFAA00)
-    embed.add_field(name='👤 Autor', value=f'{before.author.mention} (`{before.author.id}`)', inline=True)
-    embed.add_field(name='📍 Canal', value=before.channel.mention, inline=True)
-    embed.add_field(name='🔗 Link', value=f'[Ir al mensaje]({after.jump_url})', inline=True)
-    embed.add_field(name='📝 Antes', value=(before.content[:512] or '[vacío]'), inline=False)
-    embed.add_field(name='📝 Después', value=(after.content[:512] or '[vacío]'), inline=False)
-    embed.set_thumbnail(url=before.author.display_avatar.url)
-    await log_msg(before.guild, 'mensaje_editado', embed)
-
-
-@bot.event
-async def on_member_join_log(member: discord.Member):
-    cuenta = (discord.utils.utcnow() - member.created_at).days
-    embed = discord.Embed(title='📥 Miembro Entró', color=0x00FF88)
-    embed.add_field(name='👤 Usuario', value=f'{member.mention} (`{member.id}`)', inline=True)
-    embed.add_field(name='📅 Cuenta creada', value=f'hace {cuenta} días', inline=True)
-    embed.add_field(name='👥 Miembros ahora', value=member.guild.member_count, inline=True)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    await log_msg(member.guild, 'miembro_join', embed)
-
-
-@bot.event
-async def on_member_remove_log(member: discord.Member):
-    # Intentar detectar si fue kick
-    razon_kick = None
-    try:
-        entries = [e async for e in member.guild.audit_logs(limit=3, action=discord.AuditLogAction.kick)]
-        for e in entries:
-            if e.target.id == member.id:
-                razon_kick = f'Kickeado por {e.user} — {e.reason or "sin razón"}'
-                break
-    except Exception:
-        pass
-    embed = discord.Embed(
-        title='📤 Miembro Salió' if not razon_kick else '👢 Miembro Kickeado',
-        color=0xFF8800 if razon_kick else 0x888888,
-    )
-    embed.add_field(name='👤 Usuario', value=f'{member} (`{member.id}`)', inline=True)
-    roles = [r.name for r in member.roles if r != member.guild.default_role]
-    embed.add_field(name='🎭 Roles', value=', '.join(roles[:5]) or 'Ninguno', inline=True)
-    if razon_kick:
-        embed.add_field(name='📋 Razón', value=razon_kick, inline=False)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    await log_msg(member.guild, 'kick' if razon_kick else 'miembro_leave', embed)
-
-
-@bot.event
-async def on_member_update_log(before: discord.Member, after: discord.Member):
-    """Detecta cambios de roles y de apodo para el log."""
-    # Roles añadidos
-    roles_add = [r for r in after.roles if r not in before.roles]
-    for rol in roles_add:
-        embed = discord.Embed(title='🟢 Rol Dado', color=0x00CC66)
-        embed.add_field(name='👤 Miembro', value=f'{after.mention} (`{after.id}`)', inline=True)
-        embed.add_field(name='🎭 Rol',     value=rol.mention, inline=True)
-        embed.set_thumbnail(url=after.display_avatar.url)
-        await log_msg(before.guild, 'rol_dado', embed)
-
-    # Roles quitados
-    roles_rem = [r for r in before.roles if r not in after.roles]
-    for rol in roles_rem:
-        embed = discord.Embed(title='🔴 Rol Quitado', color=0xCC2200)
-        embed.add_field(name='👤 Miembro', value=f'{after.mention} (`{after.id}`)', inline=True)
-        embed.add_field(name='🎭 Rol',     value=rol.mention, inline=True)
-        embed.set_thumbnail(url=after.display_avatar.url)
-        await log_msg(before.guild, 'rol_quitado', embed)
-
-    # Apodo cambiado
-    if before.nick != after.nick:
-        embed = discord.Embed(title='✏️ Apodo Cambiado', color=0xFFCC00)
-        embed.add_field(name='👤 Miembro', value=f'{after.mention} (`{after.id}`)', inline=True)
-        embed.add_field(name='Antes',      value=before.nick or '*ninguno*', inline=True)
-        embed.add_field(name='Después',    value=after.nick or '*ninguno*',  inline=True)
-        embed.set_thumbnail(url=after.display_avatar.url)
-        await log_msg(before.guild, 'nick_cambiado', embed)
-
-    # Timeout aplicado / quitado
-    if before.timed_out_until != after.timed_out_until:
-        if after.timed_out_until:
-            embed = discord.Embed(title='🔇 Timeout Aplicado', color=0xFF6600)
-            embed.add_field(name='👤 Miembro',  value=f'{after.mention} (`{after.id}`)', inline=True)
-            embed.add_field(name='⏰ Hasta',    value=f'<t:{int(after.timed_out_until.timestamp())}:F>', inline=True)
-        else:
-            embed = discord.Embed(title='🔊 Timeout Quitado', color=0x00AA88)
-            embed.add_field(name='👤 Miembro', value=f'{after.mention} (`{after.id}`)', inline=True)
-        embed.set_thumbnail(url=after.display_avatar.url)
-        await log_msg(before.guild, 'timeout', embed)
-
-
-@bot.event
-async def on_voice_state_update_log(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-    if member.bot:
-        return
-    if before.channel is None and after.channel is not None:
-        embed = discord.Embed(title='🎙️ Entró a Voz', color=0x5865F2)
-        embed.add_field(name='👤 Miembro', value=f'{member.mention}', inline=True)
-        embed.add_field(name='🔊 Canal',   value=after.channel.name, inline=True)
-        await log_msg(member.guild, 'voz_join', embed)
-    elif before.channel is not None and after.channel is None:
-        embed = discord.Embed(title='🔇 Salió de Voz', color=0x888888)
-        embed.add_field(name='👤 Miembro', value=f'{member.mention}', inline=True)
-        embed.add_field(name='🔊 Canal',   value=before.channel.name, inline=True)
-        await log_msg(member.guild, 'voz_leave', embed)
-    elif before.channel != after.channel and before.channel and after.channel:
-        embed = discord.Embed(title='🔀 Movido en Voz', color=0x99AAFF)
-        embed.add_field(name='👤 Miembro', value=f'{member.mention}', inline=True)
-        embed.add_field(name='Antes',      value=before.channel.name, inline=True)
-        embed.add_field(name='Después',    value=after.channel.name,  inline=True)
-        await log_msg(member.guild, 'voz_move', embed)
-
-
-@bot.event
-async def on_guild_channel_create_log(channel):
-    if not hasattr(channel, 'guild'):
-        return
-    embed = discord.Embed(title='📂 Canal Creado', color=0x00FF88)
-    embed.add_field(name='📍 Canal', value=f'{channel.mention} (`{channel.id}`)', inline=True)
-    embed.add_field(name='📁 Tipo',  value=str(channel.type), inline=True)
-    try:
-        entries = [e async for e in channel.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_create)]
-        if entries:
-            embed.add_field(name='👤 Por', value=entries[0].user.mention, inline=True)
-    except Exception:
-        pass
-    await log_msg(channel.guild, 'canal_creado', embed)
-
-
-@bot.event
-async def on_guild_channel_delete_log(channel):
-    if not hasattr(channel, 'guild'):
-        return
-    embed = discord.Embed(title='🗑️ Canal Eliminado', color=0xFF4444)
-    embed.add_field(name='📍 Canal', value=f'`#{channel.name}` (`{channel.id}`)', inline=True)
-    embed.add_field(name='📁 Tipo',  value=str(channel.type), inline=True)
-    try:
-        entries = [e async for e in channel.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_delete)]
-        if entries:
-            embed.add_field(name='👤 Por', value=entries[0].user.mention, inline=True)
-    except Exception:
-        pass
-    await log_msg(channel.guild, 'canal_eliminado', embed)
-
-
-@bot.event
-async def on_member_ban_log(guild: discord.Guild, user: discord.User):
-    await asyncio.sleep(0.5)
-    razon = None
-    por   = None
-    try:
-        entries = [e async for e in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban)]
-        for e in entries:
-            if e.target.id == user.id:
-                razon = e.reason
-                por   = e.user
-                break
-    except Exception:
-        pass
-    embed = discord.Embed(title='🔨 Miembro Baneado', color=0xFF0000)
-    embed.add_field(name='👤 Usuario', value=f'{user} (`{user.id}`)', inline=True)
-    if por:
-        embed.add_field(name='🛡️ Por',  value=por.mention, inline=True)
-    embed.add_field(name='📋 Razón',   value=razon or 'Sin razón', inline=False)
-    embed.set_thumbnail(url=user.display_avatar.url)
-    await log_msg(guild, 'ban', embed)
-
-
-@bot.event
-async def on_member_unban_log(guild: discord.Guild, user: discord.User):
-    embed = discord.Embed(title='✅ Miembro Desbaneado', color=0x00FF88)
-    embed.add_field(name='👤 Usuario', value=f'{user} (`{user.id}`)', inline=True)
-    embed.set_thumbnail(url=user.display_avatar.url)
-    await log_msg(guild, 'unban', embed)
-
-
-@bot.event
-async def on_invite_create_log(invite: discord.Invite):
-    if not invite.guild:
-        return
-    embed = discord.Embed(title='🔗 Invitación Creada', color=0xAA88FF)
-    embed.add_field(name='🔑 Código',   value=f'`{invite.code}`', inline=True)
-    embed.add_field(name='👤 Por',      value=invite.inviter.mention if invite.inviter else '?', inline=True)
-    embed.add_field(name='📍 Canal',    value=invite.channel.mention if invite.channel else '?', inline=True)
-    usos = invite.max_uses or '∞'
-    exp  = f'<t:{int(invite.expires_at.timestamp())}:R>' if invite.expires_at else '∞'
-    embed.add_field(name='🔢 Usos máx', value=str(usos), inline=True)
-    embed.add_field(name='⏰ Expira',   value=exp, inline=True)
-    await log_msg(invite.guild, 'invite_creada', embed)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1338,12 +936,7 @@ async def an_ayuda(ctx):
     embed.add_field(name='Límites', value=f'`{p}an_limite <tipo> <n>` — tipos: ban kick roles canales webhooks roles_peligrosos', inline=False)
     embed.add_field(name='AntiRaid', value=f'`{p}an_antiraid` `{p}an_antiraid_on` `{p}an_antiraid_off`\n`{p}an_antiraid_config <joins> <ventana> <accion>`', inline=False)
     embed.add_field(name='AntiLinks / AntiSpam / AntiBot', value=f'`{p}an_antilinks_on/off` `{p}an_antispam_on/off` `{p}an_antibot_on/off`', inline=False)
-    embed.add_field(name='AntiInvite', value=f'`{p}an_antiinvite_on` `{p}an_antiinvite_off`\nBloquea invitaciones a otros servidores de Discord.', inline=False)
-    embed.add_field(name='AntiMentionSpam', value=f'`{p}an_antimentionspam_on/off`\n`{p}an_antimentionspam_config <limite> <ventana>`', inline=False)
-    embed.add_field(name='AntiMassNick', value=f'`{p}an_massnick_on/off`\n`{p}an_massnick_config <limite> <ventana>`', inline=False)
-    embed.add_field(name='Lockdown', value=f'`{p}an_lockdown [razón]` — Bloquea todos los canales\n`{p}an_unlockdown` — Desbloquea los canales', inline=False)
     embed.add_field(name='Verificación', value=f'`{p}an_ver_setup #canal @rol_ver [@rol_no]` `{p}an_ver_on/off`', inline=False)
-    embed.add_field(name='Auditoría', value=f'`{p}an_audit [n]` — Últimas n entradas del audit log\n`{p}an_banlist` — Lista de baneados (paginada)\n`{p}an_clearlinks [n]` — Purga mensajes con links', inline=False)
     embed.add_field(name='Snapshot', value=f'`{p}an_snapshot` — Ver última snapshot\n`{p}an_restore` — Restaurar canales desde snapshot', inline=False)
     await ctx.send(embed=embed)
 
@@ -1662,494 +1255,10 @@ async def an_restore(ctx):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ────────── NUEVOS COMANDOS DE SEGURIDAD ───────────────────────────────────────
+# ────────── WARNS ──────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ─── Lockdown ────────────────────────────────────────────────────────────────
-
-@bot.command(name='an_lockdown')
-@commands.check(es_owner_an)
-async def an_lockdown(ctx, *, razon: str = 'Emergencia de seguridad'):
-    """Bloquea el envío de mensajes en todos los canales de texto para @everyone."""
-    cfg = cargar_antinuke(ctx.guild.id)
-    bloqueados = []
-    msg = await ctx.send('🔒 Aplicando lockdown...')
-    for channel in ctx.guild.text_channels:
-        overwrite = channel.overwrites_for(ctx.guild.default_role)
-        if overwrite.send_messages is not False:
-            overwrite.send_messages = False
-            try:
-                await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite,
-                                              reason=f'[Lockdown] {razon}')
-                bloqueados.append(str(channel.id))
-            except Exception:
-                pass
-    cfg['lockdown']['activo'] = True
-    cfg['lockdown']['canales_bloqueados'] = bloqueados
-    guardar_antinuke(cfg, ctx.guild.id)
-    await log_antinuke(ctx.guild, '🔒 LOCKDOWN ACTIVADO',
-                       f'**Por:** {ctx.author.mention}\n**Razón:** {razon}\n**Canales:** {len(bloqueados)}', 0xFF0000)
-    try:
-        await msg.edit(content=f'🔒 **Lockdown activado** en {len(bloqueados)} canales. Razón: {razon}')
-    except Exception:
-        pass
-
-
-@bot.command(name='an_unlockdown')
-@commands.check(es_owner_an)
-async def an_unlockdown(ctx):
-    """Desbloquea todos los canales bloqueados por lockdown."""
-    cfg = cargar_antinuke(ctx.guild.id)
-    desbloqueados = 0
-    msg = await ctx.send('🔓 Levantando lockdown...')
-    for cid in cfg['lockdown'].get('canales_bloqueados', []):
-        channel = ctx.guild.get_channel(int(cid))
-        if channel:
-            overwrite = channel.overwrites_for(ctx.guild.default_role)
-            overwrite.send_messages = None  # restablecer a herencia
-            try:
-                await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite,
-                                              reason='[Lockdown] Levantado')
-                desbloqueados += 1
-            except Exception:
-                pass
-    cfg['lockdown']['activo'] = False
-    cfg['lockdown']['canales_bloqueados'] = []
-    guardar_antinuke(cfg, ctx.guild.id)
-    await log_antinuke(ctx.guild, '🔓 LOCKDOWN LEVANTADO',
-                       f'**Por:** {ctx.author.mention}\n**Canales desbloqueados:** {desbloqueados}', 0x00FF88)
-    try:
-        await msg.edit(content=f'🔓 **Lockdown levantado** en {desbloqueados} canales.')
-    except Exception:
-        pass
-
-
-# ─── AntiInvite ───────────────────────────────────────────────────────────────
-
-@bot.command(name='an_antiinvite_on')
-@commands.check(es_owner_an)
-async def an_antiinvite_on(ctx):
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('antiinvite', {})['activo'] = True
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send('🟢 **AntiInvite activado.** Se eliminarán los enlaces de invitación de Discord.')
-
-
-@bot.command(name='an_antiinvite_off')
-@commands.check(es_owner_an)
-async def an_antiinvite_off(ctx):
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('antiinvite', {})['activo'] = False
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send('🔴 **AntiInvite desactivado.**')
-
-
-# ─── AntiMentionSpam ──────────────────────────────────────────────────────────
-
-@bot.command(name='an_antimentionspam_on')
-@commands.check(es_owner_an)
-async def an_antimentionspam_on(ctx):
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('antimentionspam', {})['activo'] = True
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send('🟢 **AntiMentionSpam activado.** Se silenciarán quienes hagan ping masivo.')
-
-
-@bot.command(name='an_antimentionspam_off')
-@commands.check(es_owner_an)
-async def an_antimentionspam_off(ctx):
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('antimentionspam', {})['activo'] = False
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send('🔴 **AntiMentionSpam desactivado.**')
-
-
-@bot.command(name='an_antimentionspam_config')
-@commands.check(es_owner_an)
-async def an_antimentionspam_config(ctx, limite: int, ventana: int):
-    """Configura el límite de menciones por ventana de tiempo.
-    Ej: ,an_antimentionspam_config 5 10  → 5 menciones en 10 segundos activa castigo."""
-    if not 1 <= limite <= 50 or not 5 <= ventana <= 120:
-        return await ctx.send('❌ Límite: 1-50 | Ventana: 5-120 segundos.')
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('antimentionspam', {}).update({'limite': limite, 'ventana': ventana})
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send(f'✅ AntiMentionSpam: `{limite}` menciones en `{ventana}s`.')
-
-
-# ─── AntiMassNick ─────────────────────────────────────────────────────────────
-
-@bot.command(name='an_massnick_on')
-@commands.check(es_owner_an)
-async def an_massnick_on(ctx):
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('massnick', {})['activo'] = True
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send('🟢 **AntiMassNick activado.** Se detectarán cambios masivos de apodo.')
-
-
-@bot.command(name='an_massnick_off')
-@commands.check(es_owner_an)
-async def an_massnick_off(ctx):
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('massnick', {})['activo'] = False
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send('🔴 **AntiMassNick desactivado.**')
-
-
-@bot.command(name='an_massnick_config')
-@commands.check(es_owner_an)
-async def an_massnick_config(ctx, limite: int, ventana: int):
-    """Configura el límite de cambios de apodo antes de tomar acción.
-    Ej: ,an_massnick_config 5 30  → 5 cambios en 30 segundos activa castigo."""
-    if not 2 <= limite <= 20 or not 10 <= ventana <= 120:
-        return await ctx.send('❌ Límite: 2-20 | Ventana: 10-120 segundos.')
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('massnick', {}).update({'limite': limite, 'ventana': ventana})
-    guardar_antinuke(cfg, ctx.guild.id)
-    await ctx.send(f'✅ AntiMassNick: `{limite}` cambios en `{ventana}s`.')
-
-
-# ─── Audit Log viewer ─────────────────────────────────────────────────────────
-
-@bot.command(name='an_audit')
-@commands.check(es_staff)
-async def an_audit(ctx, limite: int = 10):
-    """Muestra las últimas entradas del audit log del servidor."""
-    if not 1 <= limite <= 25:
-        return await ctx.send('❌ Límite entre 1 y 25.')
-    if not ctx.guild.me.guild_permissions.view_audit_log:
-        return await ctx.send('❌ No tengo permiso para ver el audit log.')
-    entries = [e async for e in ctx.guild.audit_logs(limit=limite)]
-    if not entries:
-        return await ctx.send('❌ No hay entradas en el audit log.')
-    embed = discord.Embed(title=f'📋 Audit Log — últimas {len(entries)} entradas', color=0x5865F2,
-                          timestamp=datetime.now(timezone.utc))
-    for entry in entries:
-        accion = str(entry.action).replace('AuditLogAction.', '')
-        ts     = int(entry.created_at.timestamp())
-        embed.add_field(
-            name=f'`{accion}`',
-            value=f'**Por:** {entry.user.mention if entry.user else "Desconocido"}\n'
-                  f'**Objetivo:** {str(entry.target) if entry.target else "—"}\n'
-                  f'**Razón:** {entry.reason or "—"}\n'
-                  f'<t:{ts}:R>',
-            inline=False,
-        )
-    await ctx.send(embed=embed)
-
-
-# ─── Ban List ─────────────────────────────────────────────────────────────────
-
-@bot.command(name='an_banlist', aliases=['banlist'])
-@commands.check(es_staff)
-async def an_banlist(ctx):
-    """Muestra la lista de usuarios baneados del servidor (paginada de 10 en 10)."""
-    bans = [entry async for entry in ctx.guild.bans()]
-    if not bans:
-        return await ctx.send('✅ No hay usuarios baneados.')
-
-    paginas = []
-    por_pag = 10
-    for i in range(0, len(bans), por_pag):
-        chunk  = bans[i:i + por_pag]
-        embed  = discord.Embed(
-            title=f'🔨 Lista de Bans — Página {i // por_pag + 1}/{(len(bans) - 1) // por_pag + 1}',
-            color=0xFF0000,
-            description='\n'.join(
-                f'`{e.user.id}` **{e.user}** — {e.reason or "Sin razón"}' for e in chunk
-            ),
-        )
-        embed.set_footer(text=f'Total: {len(bans)} baneados')
-        paginas.append(embed)
-
-    if len(paginas) == 1:
-        return await ctx.send(embed=paginas[0])
-
-    # Paginador simple
-    idx = 0
-    btns = discord.ui.View(timeout=120)
-
-    async def _prev(i: discord.Interaction):
-        nonlocal idx
-        if i.user.id != ctx.author.id:
-            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
-        idx = (idx - 1) % len(paginas)
-        await i.response.edit_message(embed=paginas[idx])
-
-    async def _next(i: discord.Interaction):
-        nonlocal idx
-        if i.user.id != ctx.author.id:
-            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
-        idx = (idx + 1) % len(paginas)
-        await i.response.edit_message(embed=paginas[idx])
-
-    b1 = discord.ui.Button(emoji='◀️', style=discord.ButtonStyle.secondary)
-    b2 = discord.ui.Button(emoji='▶️', style=discord.ButtonStyle.primary)
-    b1.callback = _prev
-    b2.callback = _next
-    btns.add_item(b1)
-    btns.add_item(b2)
-    await ctx.send(embed=paginas[0], view=btns)
-
-
-# ─── Clear Links ──────────────────────────────────────────────────────────────
-
-@bot.command(name='an_clearlinks')
-@commands.check(es_staff)
-async def an_clearlinks(ctx, cantidad: int = 50):
-    """Elimina mensajes con links del canal actual (máx. 100)."""
-    if not 1 <= cantidad <= 100:
-        return await ctx.send('❌ Cantidad entre 1 y 100.')
-    patron_link = ('http://', 'https://', 'discord.gg/', 'discord.com/invite/')
-    eliminados  = 0
-    async for message in ctx.channel.history(limit=cantidad * 3):
-        if eliminados >= cantidad:
-            break
-        if message.author.bot:
-            continue
-        if any(p in message.content for p in patron_link):
-            try:
-                await message.delete()
-                eliminados += 1
-                await asyncio.sleep(0.4)
-            except Exception:
-                pass
-    await ctx.send(f'🧹 Se eliminaron **{eliminados}** mensajes con links.', delete_after=8)
-    await log_antinuke(ctx.guild, '🧹 ClearLinks',
-                       f'**Por:** {ctx.author.mention}\n**Canal:** {ctx.channel.mention}\n**Eliminados:** {eliminados}',
-                       0x00AAFF)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ────────── MSGLOG — Canal de auditoría de eventos ────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
-
-MSGLOG_EVENTOS = [
-    'mensaje_borrado', 'mensaje_editado',
-    'miembro_join', 'miembro_leave',
-    'rol_dado', 'rol_quitado',
-    'canal_creado', 'canal_eliminado',
-    'nick_cambiado', 'voz_join', 'voz_leave', 'voz_move',
-    'ban', 'unban', 'kick', 'timeout',
-    'invite_creada',
-]
-
-
-@bot.command(name='an_msglog')
-@commands.check(es_owner_an)
-async def an_msglog(ctx, canal: discord.TextChannel = None):
-    """Activa el log de auditoría en un canal. Sin canal = desactivar.
-    Uso: ,an_msglog #canal"""
-    cfg = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('msglog', {})
-    if canal is None:
-        cfg['msglog']['activo'] = False
-        cfg['msglog']['canal']  = None
-        guardar_antinuke(cfg, ctx.guild.id)
-        return await ctx.send('🔴 **MsgLog desactivado.**')
-    cfg['msglog']['activo'] = True
-    cfg['msglog']['canal']  = str(canal.id)
-    guardar_antinuke(cfg, ctx.guild.id)
-    embed = discord.Embed(title='📋 MsgLog Activado', color=0x5865F2)
-    embed.add_field(name='📍 Canal', value=canal.mention, inline=True)
-    embed.add_field(name='📊 Eventos activos', value=str(len(MSGLOG_EVENTOS)), inline=True)
-    embed.add_field(
-        name='Tip',
-        value=f'Usa `{PREFIX}an_msglog_evento <evento> <on/off>` para activar/desactivar eventos individuales.',
-        inline=False,
-    )
-    await ctx.send(embed=embed)
-
-
-@bot.command(name='an_msglog_status')
-@commands.check(es_owner_an)
-async def an_msglog_status(ctx):
-    """Muestra el estado del MsgLog y los eventos configurados."""
-    cfg    = cargar_antinuke(ctx.guild.id)
-    mlog   = cfg.get('msglog', {})
-    activo = mlog.get('activo', False)
-    canal  = mlog.get('canal')
-    ch_str = f'<#{canal}>' if canal else 'No configurado'
-    eventos = mlog.get('eventos', {e: True for e in MSGLOG_EVENTOS})
-    embed  = discord.Embed(
-        title='📋 Estado del MsgLog',
-        color=0x5865F2 if activo else 0x888888,
-    )
-    embed.add_field(name='Estado', value='🟢 Activo' if activo else '🔴 Inactivo', inline=True)
-    embed.add_field(name='Canal',  value=ch_str, inline=True)
-    lineas = []
-    for ev in MSGLOG_EVENTOS:
-        icono = '🟢' if eventos.get(ev, True) else '🔴'
-        lineas.append(f'{icono} `{ev}`')
-    embed.add_field(name='Eventos', value='\n'.join(lineas), inline=False)
-    await ctx.send(embed=embed)
-
-
-@bot.command(name='an_msglog_evento')
-@commands.check(es_owner_an)
-async def an_msglog_evento(ctx, evento: str, estado: str):
-    """Activa o desactiva un evento específico del MsgLog.
-    Uso: ,an_msglog_evento mensaje_borrado off"""
-    if evento not in MSGLOG_EVENTOS:
-        return await ctx.send(
-            f'❌ Evento no válido. Opciones:\n`{"` `".join(MSGLOG_EVENTOS)}`'
-        )
-    if estado.lower() not in ('on', 'off', 'activar', 'desactivar', '1', '0'):
-        return await ctx.send('❌ Estado: `on` o `off`.')
-    activo = estado.lower() in ('on', 'activar', '1')
-    cfg    = cargar_antinuke(ctx.guild.id)
-    cfg.setdefault('msglog', {}).setdefault('eventos', {ev: True for ev in MSGLOG_EVENTOS})
-    cfg['msglog']['eventos'][evento] = activo
-    guardar_antinuke(cfg, ctx.guild.id)
-    icono = '🟢' if activo else '🔴'
-    await ctx.send(f'{icono} Evento `{evento}` → **{"activado" if activo else "desactivado"}**.')
-
-
-@bot.command(name='an_msglog_test')
-@commands.check(es_owner_an)
-async def an_msglog_test(ctx):
-    """Envía un mensaje de prueba al canal de MsgLog para verificar que funciona."""
-    cfg   = cargar_antinuke(ctx.guild.id)
-    mlog  = cfg.get('msglog', {})
-    if not mlog.get('activo') or not mlog.get('canal'):
-        return await ctx.send('❌ MsgLog no está activo. Usa `,an_msglog #canal` primero.')
-    embed = discord.Embed(
-        title='🔧 Prueba de MsgLog',
-        description='✅ El canal de auditoría está correctamente configurado.',
-        color=0x00FF88,
-    )
-    embed.add_field(name='📍 Servidor',   value=ctx.guild.name, inline=True)
-    embed.add_field(name='👤 Probado por', value=ctx.author.mention, inline=True)
-    await log_msg(ctx.guild, 'mensaje_borrado', embed)
-    await ctx.send('✅ Mensaje de prueba enviado al canal de auditoría.')
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ────────── HARDBAN ───────────────────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
-# Nota: La API de Discord NO expone las IPs de los usuarios a los bots.
-# El "hard ban" es la acción más severa disponible: banear + eliminar 7 días de
-# historial de mensajes (máximo que permite la API de Discord), lo que borra
-# toda presencia del usuario del servidor.
-
-@bot.command(name='hardban', aliases=['hban'])
-@commands.check(es_owner_o_admin)
-async def hardban(ctx, usuario: discord.User, *, razon: str = 'Sin razón'):
-    """Ban severo: expulsa al usuario Y elimina sus últimos 7 días de mensajes.
-    Acepta usuarios que ya no están en el servidor (por ID o mención).
-    Uso: ,hardban @usuario razón
-         ,hardban 123456789 razón"""
-    if usuario.id == ctx.author.id:
-        return await ctx.send('❌ No puedes hacerte hardban a ti mismo.')
-    if usuario.id == bot.user.id:
-        return await ctx.send('❌ No puedo baneARME a mí mismo.')
-
-    # verificar jerarquía si el usuario aún está en el servidor
-    member = ctx.guild.get_member(usuario.id)
-    if member:
-        if member.top_role >= ctx.guild.me.top_role:
-            return await ctx.send('❌ No puedo banear a alguien con un rol igual o superior al mío.')
-        if member.top_role >= ctx.author.top_role and ctx.author.id != ctx.guild.owner_id:
-            return await ctx.send('❌ No puedes banear a alguien con un rol igual o superior al tuyo.')
-
-    # notificar al usuario antes del ban si aún está en el servidor
-    if member:
-        try:
-            dm_embed = discord.Embed(
-                title=f'🔨 Has sido baneado de {ctx.guild.name}',
-                description=f'**Razón:** {razon}\n**Por:** {ctx.author}',
-                color=0xFF0000,
-            )
-            await usuario.send(embed=dm_embed)
-        except Exception:
-            pass
-
-    try:
-        # delete_message_seconds = 7 días (604800 segundos) — máximo de la API
-        await ctx.guild.ban(
-            discord.Object(id=usuario.id),
-            reason=f'[HardBan] {ctx.author} — {razon}',
-            delete_message_seconds=604800,
-        )
-    except discord.Forbidden:
-        return await ctx.send('❌ No tengo permisos para banear a ese usuario.')
-    except discord.HTTPException as e:
-        return await ctx.send(f'❌ Error al banear: `{e}`')
-
-    embed = discord.Embed(
-        title='🔨 Hard Ban Ejecutado',
-        description=(
-            f'**Usuario:** {usuario} (`{usuario.id}`)\n'
-            f'**Razón:** {razon}\n'
-            f'**Por:** {ctx.author.mention}\n'
-            f'**Mensajes eliminados:** últimos 7 días'
-        ),
-        color=0x8B0000,
-    )
-    embed.set_thumbnail(url=usuario.display_avatar.url)
-    embed.set_footer(text='⚠️ El historial de mensajes del usuario fue eliminado.')
-    await ctx.send(embed=embed)
-
-    # registrar en ambos logs
-    await log_antinuke(
-        ctx.guild, '🔨 Hard Ban',
-        f'**Usuario:** {usuario} (`{usuario.id}`)\n**Por:** {ctx.author.mention}\n**Razón:** {razon}',
-        0x8B0000,
-    )
-    await log_msg(
-        ctx.guild, 'ban',
-        discord.Embed(
-            title='🔨 Hard Ban Registrado',
-            description=f'**{usuario}** (`{usuario.id}`) — {razon}',
-            color=0x8B0000,
-        ),
-    )
-
-
-@bot.command(name='hardban_id', aliases=['hban_id'])
-@commands.check(es_owner_o_admin)
-async def hardban_id(ctx, user_id: int, *, razon: str = 'Sin razón'):
-    """Igual que hardban pero acepta solo la ID (útil si el usuario ya no existe).
-    Uso: ,hardban_id 123456789012345678 razón"""
-    try:
-        usuario = await bot.fetch_user(user_id)
-    except discord.NotFound:
-        # banear aunque no se pueda fetch el perfil
-        usuario = discord.Object(id=user_id)
-        usuario.display_avatar = None
-
-    try:
-        await ctx.guild.ban(
-            discord.Object(id=user_id),
-            reason=f'[HardBan por ID] {ctx.author} — {razon}',
-            delete_message_seconds=604800,
-        )
-    except discord.Forbidden:
-        return await ctx.send('❌ Sin permisos para banear esa ID.')
-    except discord.HTTPException as e:
-        return await ctx.send(f'❌ Error: `{e}`')
-
-    nombre = str(usuario) if hasattr(usuario, 'name') else f'ID {user_id}'
-    embed  = discord.Embed(
-        title='🔨 Hard Ban por ID',
-        description=(
-            f'**Usuario:** {nombre} (`{user_id}`)\n'
-            f'**Razón:** {razon}\n'
-            f'**Por:** {ctx.author.mention}\n'
-            f'**Mensajes eliminados:** últimos 7 días'
-        ),
-        color=0x8B0000,
-    )
-    embed.set_footer(text='⚠️ El historial de mensajes fue eliminado.')
-    await ctx.send(embed=embed)
-    await log_antinuke(
-        ctx.guild, '🔨 Hard Ban por ID',
-        f'**ID:** `{user_id}`\n**Por:** {ctx.author.mention}\n**Razón:** {razon}',
-        0x8B0000,
-    )
-
-
+def cargar_warns() -> dict:
     if os.path.exists(WARNS_FILE):
         with open(WARNS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -2363,27 +1472,58 @@ async def masskick(ctx, *members: discord.Member):
     await ctx.send(f'👢 Kickeados: **{count}** | Errores: **{errors}**')
 
 
-@bot.command(name='banlist')
-@commands.check(es_admin)
-async def banlist(ctx):
+# ─── Ban List ─────────────────────────────────────────────────────────────────
+
+@bot.command(name='an_banlist', aliases=['banlist'])
+@commands.check(es_staff)
+async def an_banlist(ctx):
+    """Muestra la lista de usuarios baneados del servidor (paginada de 10 en 10)."""
     bans = [entry async for entry in ctx.guild.bans()]
     if not bans:
         return await ctx.send('✅ No hay usuarios baneados.')
-    chunks, chunk = [], ''
-    for i, e in enumerate(bans, 1):
-        linea = f'`{i}.` **{e.user}** (`{e.user.id}`) — {e.reason or "Sin razón"}\n'
-        if len(chunk) + len(linea) > 1900:
-            chunks.append(chunk)
-            chunk = ''
-        chunk += linea
-    if chunk:
-        chunks.append(chunk)
-    for i, c in enumerate(chunks, 1):
+
+    paginas = []
+    por_pag = 10
+    for i in range(0, len(bans), por_pag):
+        chunk = bans[i:i + por_pag]
         embed = discord.Embed(
-            title=f'📋 Banlist ({i}/{len(chunks)}) — {len(bans)} bans',
-            description=c, color=0xFF0000,
+            title=f'🔨 Lista de Bans — Página {i // por_pag + 1}/{(len(bans) - 1) // por_pag + 1}',
+            color=0xFF0000,
+            description='\n'.join(
+                f'`{e.user.id}` **{e.user}** — {e.reason or "Sin razón"}' for e in chunk
+            ),
         )
-        await ctx.send(embed=embed)
+        embed.set_footer(text=f'Total: {len(bans)} baneados')
+        paginas.append(embed)
+
+    if len(paginas) == 1:
+        return await ctx.send(embed=paginas[0])
+
+    # Paginador simple
+    idx  = 0
+    btns = discord.ui.View(timeout=120)
+
+    async def _prev(i: discord.Interaction):
+        nonlocal idx
+        if i.user.id != ctx.author.id:
+            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
+        idx = (idx - 1) % len(paginas)
+        await i.response.edit_message(embed=paginas[idx])
+
+    async def _next(i: discord.Interaction):
+        nonlocal idx
+        if i.user.id != ctx.author.id:
+            return await i.response.send_message('❌ No es tu menú.', ephemeral=True)
+        idx = (idx + 1) % len(paginas)
+        await i.response.edit_message(embed=paginas[idx])
+
+    b1 = discord.ui.Button(emoji='◀️', style=discord.ButtonStyle.secondary)
+    b2 = discord.ui.Button(emoji='▶️', style=discord.ButtonStyle.primary)
+    b1.callback = _prev
+    b2.callback = _next
+    btns.add_item(b1)
+    btns.add_item(b2)
+    await ctx.send(embed=paginas[0], view=btns)
 
 
 @bot.command(name='limpiar', aliases=['clear', 'purge'])
@@ -4908,11 +4048,6 @@ def _build_ayuda_pages() -> list:
          f'`{p}an_whitelist [@u]` `{p}an_accion` `{p}an_limite` `{p}an_ventana`\n'
          f'`{p}an_antiraid_on/off` `{p}an_antilinks_on/off` `{p}an_antispam_on/off`\n'
          f'`{p}an_antibot_on/off` `{p}an_ver_on/off` `{p}an_snapshot` `{p}an_restore`\n'
-         f'`{p}an_antiinvite_on/off` — Bloquea invitaciones a otros servidores\n'
-         f'`{p}an_antimentionspam_on/off` `{p}an_antimentionspam_config <lim> <vent>`\n'
-         f'`{p}an_massnick_on/off` `{p}an_massnick_config <lim> <vent>`\n'
-         f'`{p}an_lockdown [razón]` `{p}an_unlockdown` — Modo emergencia\n'
-         f'`{p}an_audit [n]` `{p}an_banlist` `{p}an_clearlinks [n]`\n'
          f'Detecta: bans/kicks/roles/canales masivos · roles peligrosos · escalada de perms · cambio de servidor'),
         ('🔒', 'Moderación',
          f'`{p}ban` `{p}unban` `{p}kick` `{p}mute` `{p}unmute`\n'
