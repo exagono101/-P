@@ -928,7 +928,7 @@ async def antinuke_status(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_ayuda')
+@bot.command(name='an_ayuda', aliases=['nuke_ayuda'])
 async def an_ayuda(ctx):
     p = PREFIX
     embed = discord.Embed(title='🛡️ Comandos AntiNuke', color=0x5865F2)
@@ -941,7 +941,7 @@ async def an_ayuda(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_activar')
+@bot.command(name='an_activar', aliases=['activar'])
 @commands.check(es_owner_an)
 async def an_activar(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -950,7 +950,7 @@ async def an_activar(ctx):
     await ctx.send('🟢 **AntiNuke activado.**')
 
 
-@bot.command(name='an_desactivar')
+@bot.command(name='an_desactivar', aliases=['desactivar'])
 @commands.check(es_owner_an)
 async def an_desactivar(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -959,7 +959,7 @@ async def an_desactivar(ctx):
     await ctx.send('🔴 **AntiNuke desactivado.**')
 
 
-@bot.command(name='an_whitelist')
+@bot.command(name='an_whitelist', aliases=['whitelist'])
 @commands.check(es_owner_an)
 async def an_whitelist(ctx, member: discord.Member = None):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -979,7 +979,7 @@ async def an_whitelist(ctx, member: discord.Member = None):
     await ctx.send(msg)
 
 
-@bot.command(name='an_accion')
+@bot.command(name='an_accion', aliases=['accion'])
 @commands.check(es_owner_an)
 async def an_accion(ctx, accion: str):
     if accion not in ('ban', 'kick', 'strip', 'timeout'):
@@ -990,7 +990,7 @@ async def an_accion(ctx, accion: str):
     await ctx.send(f'✅ Acción cambiada a `{accion}`.')
 
 
-@bot.command(name='an_limite')
+@bot.command(name='an_limite', aliases=['limite'])
 @commands.check(es_owner_an)
 async def an_limite(ctx, tipo: str, cantidad: int):
     tipos_validos = ('ban', 'kick', 'roles', 'canales', 'webhooks', 'roles_peligrosos')
@@ -1002,7 +1002,7 @@ async def an_limite(ctx, tipo: str, cantidad: int):
     await ctx.send(f'✅ Límite de `{tipo}` → `{cantidad}`.')
 
 
-@bot.command(name='an_ventana')
+@bot.command(name='an_ventana', aliases=['ventana'])
 @commands.check(es_owner_an)
 async def an_ventana(ctx, segundos: int):
     if not 5 <= segundos <= 120:
@@ -1013,7 +1013,7 @@ async def an_ventana(ctx, segundos: int):
     await ctx.send(f'✅ Ventana → `{segundos}s`.')
 
 
-@bot.command(name='an_logs')
+@bot.command(name='an_logs', aliases=['logs'])
 @commands.check(es_owner_an)
 async def an_logs(ctx, canal: discord.TextChannel = None):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1022,7 +1022,7 @@ async def an_logs(ctx, canal: discord.TextChannel = None):
     await ctx.send(f'✅ Logs → {canal.mention if canal else "desactivados"}.')
 
 
-@bot.command(name='an_owner')
+@bot.command(name='an_owner', aliases=['owner'])
 @commands.check(lambda ctx: ctx.author.id == ctx.guild.owner_id)
 async def an_owner(ctx, member: discord.Member):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1032,7 +1032,7 @@ async def an_owner(ctx, member: discord.Member):
 
 
 # AntiRaid
-@bot.command(name='an_antiraid')
+@bot.command(name='an_antiraid', aliases=['antiraid'])
 @commands.check(es_owner_an)
 async def an_antiraid_status(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1045,7 +1045,7 @@ async def an_antiraid_status(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_antiraid_on')
+@bot.command(name='an_antiraid_on', aliases=['antiraid_on'])
 @commands.check(es_owner_an)
 async def an_antiraid_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1054,7 +1054,7 @@ async def an_antiraid_on(ctx):
     await ctx.send('🟢 **AntiRaid activado.**')
 
 
-@bot.command(name='an_antiraid_off')
+@bot.command(name='an_antiraid_off', aliases=['antiraid_off'])
 @commands.check(es_owner_an)
 async def an_antiraid_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1063,7 +1063,7 @@ async def an_antiraid_off(ctx):
     await ctx.send('🔴 **AntiRaid desactivado.**')
 
 
-@bot.command(name='an_antiraid_config')
+@bot.command(name='an_antiraid_config', aliases=['antiraid_config'])
 @commands.check(es_owner_an)
 async def an_antiraid_config(ctx, joins: int, ventana: int, accion: str = 'kick'):
     if accion not in ('ban', 'kick'):
@@ -1075,7 +1075,7 @@ async def an_antiraid_config(ctx, joins: int, ventana: int, accion: str = 'kick'
 
 
 # AntiLinks
-@bot.command(name='an_antilinks_on')
+@bot.command(name='an_antilinks_on', aliases=['antilinks_on'])
 @commands.check(es_owner_an)
 async def an_antilinks_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1084,7 +1084,7 @@ async def an_antilinks_on(ctx):
     await ctx.send('🟢 **AntiLinks activado.**')
 
 
-@bot.command(name='an_antilinks_off')
+@bot.command(name='an_antilinks_off', aliases=['antilinks_off'])
 @commands.check(es_owner_an)
 async def an_antilinks_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1093,7 +1093,7 @@ async def an_antilinks_off(ctx):
     await ctx.send('🔴 **AntiLinks desactivado.**')
 
 
-@bot.command(name='an_links_canal')
+@bot.command(name='an_links_canal', aliases=['links_canal'])
 @commands.check(es_owner_an)
 async def an_links_canal(ctx, canal: discord.TextChannel):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1109,7 +1109,7 @@ async def an_links_canal(ctx, canal: discord.TextChannel):
     await ctx.send(msg)
 
 
-@bot.command(name='an_links_rol')
+@bot.command(name='an_links_rol', aliases=['links_rol'])
 @commands.check(es_owner_an)
 async def an_links_rol(ctx, *, nombre_rol: str):
     rol = discord.utils.find(lambda r: r.name.lower() == nombre_rol.lower(), ctx.guild.roles)
@@ -1129,7 +1129,7 @@ async def an_links_rol(ctx, *, nombre_rol: str):
 
 
 # AntiSpam
-@bot.command(name='an_antispam_on')
+@bot.command(name='an_antispam_on', aliases=['antispam_on'])
 @commands.check(es_owner_an)
 async def an_antispam_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1138,7 +1138,7 @@ async def an_antispam_on(ctx):
     await ctx.send('🟢 **AntiSpam activado.**')
 
 
-@bot.command(name='an_antispam_off')
+@bot.command(name='an_antispam_off', aliases=['antispam_off'])
 @commands.check(es_owner_an)
 async def an_antispam_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1147,7 +1147,7 @@ async def an_antispam_off(ctx):
     await ctx.send('🔴 **AntiSpam desactivado.**')
 
 
-@bot.command(name='an_spam_config')
+@bot.command(name='an_spam_config', aliases=['spam_config'])
 @commands.check(es_owner_an)
 async def an_spam_config(ctx, mensajes: int, ventana: int):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1157,7 +1157,7 @@ async def an_spam_config(ctx, mensajes: int, ventana: int):
 
 
 # AntiBot
-@bot.command(name='an_antibot_on')
+@bot.command(name='an_antibot_on', aliases=['antibot_on'])
 @commands.check(es_owner_an)
 async def an_antibot_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1166,7 +1166,7 @@ async def an_antibot_on(ctx):
     await ctx.send('🟢 **AntiBot activado.**')
 
 
-@bot.command(name='an_antibot_off')
+@bot.command(name='an_antibot_off', aliases=['antibot_off'])
 @commands.check(es_owner_an)
 async def an_antibot_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1176,7 +1176,7 @@ async def an_antibot_off(ctx):
 
 
 # Verificación
-@bot.command(name='an_ver_setup')
+@bot.command(name='an_ver_setup', aliases=['ver_setup'])
 @commands.check(es_owner_an)
 async def an_ver_setup(ctx, canal: discord.TextChannel, rol_ver: discord.Role, rol_no_ver: discord.Role = None):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1189,7 +1189,7 @@ async def an_ver_setup(ctx, canal: discord.TextChannel, rol_ver: discord.Role, r
     await ctx.send(f'✅ Verificación configurada — canal: {canal.mention} | rol: {rol_ver.mention}')
 
 
-@bot.command(name='an_ver_on')
+@bot.command(name='an_ver_on', aliases=['ver_on'])
 @commands.check(es_owner_an)
 async def an_ver_on(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1198,7 +1198,7 @@ async def an_ver_on(ctx):
     await ctx.send('🟢 **Verificación activada.**')
 
 
-@bot.command(name='an_ver_off')
+@bot.command(name='an_ver_off', aliases=['ver_off'])
 @commands.check(es_owner_an)
 async def an_ver_off(ctx):
     cfg = cargar_antinuke(ctx.guild.id)
@@ -1208,7 +1208,7 @@ async def an_ver_off(ctx):
 
 
 # Snapshot
-@bot.command(name='an_snapshot')
+@bot.command(name='an_snapshot', aliases=['snapshot'])
 @commands.check(es_owner_an)
 async def an_snapshot(ctx):
     snaps = cargar_snapshots()
@@ -1225,7 +1225,7 @@ async def an_snapshot(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='an_restore')
+@bot.command(name='an_restore', aliases=['restore'])
 @commands.check(es_owner_an)
 async def an_restore(ctx):
     snaps = cargar_snapshots()
@@ -1712,10 +1712,40 @@ async def dar_rol(ctx, member: discord.Member, *, nombre_rol: str):
 
 @bot.command(name='r')
 @commands.check(es_admin)
-async def r_cmd(ctx, user_id: int, *, nombre_rol: str):
-    """Da un rol a un usuario por su ID (aunque no esté en el servidor visible).
-    Uso: ,r 123456789 Nombre del Rol"""
-    # buscar miembro
+async def r_cmd(ctx, accion: str, *, nombre_rol: str):
+    """Dar rol por ID o crear un rol nuevo.
+    Uso: ,r <id_usuario> <nombre del rol>
+         ,r create <nombre del rol>"""
+
+    # ── MODO CREATE ──────────────────────────────────────────────────────────
+    if accion.lower() == 'create':
+        existente = discord.utils.find(lambda r: r.name.lower() == nombre_rol.lower(), ctx.guild.roles)
+        if existente:
+            return await ctx.send(f'⚠️ Ya existe el rol **{existente.name}** ({existente.mention}).')
+        try:
+            nuevo_rol = await ctx.guild.create_role(
+                name=nombre_rol,
+                reason=f'[,r create] Creado por {ctx.author}',
+            )
+        except discord.Forbidden:
+            return await ctx.send('❌ No tengo permisos para crear roles.')
+        embed = discord.Embed(title='✅ Rol Creado', color=nuevo_rol.color)
+        embed.add_field(name='🎭 Rol',   value=nuevo_rol.mention,    inline=True)
+        embed.add_field(name='🆔 ID',    value=f'`{nuevo_rol.id}`',  inline=True)
+        embed.add_field(name='🛡️ Por',   value=ctx.author.mention,   inline=True)
+        embed.set_footer(text='Usa ,r <id_usuario> para asignarlo, o edítalo desde el servidor.')
+        return await ctx.send(embed=embed)
+
+    # ── MODO DAR ROL POR ID ───────────────────────────────────────────────────
+    try:
+        user_id = int(accion)
+    except ValueError:
+        return await ctx.send(
+            f'❌ Uso correcto:\n'
+            f'• `,r <id_usuario> <rol>` — dar rol por ID\n'
+            f'• `,r create <nombre>` — crear un rol nuevo'
+        )
+
     member = ctx.guild.get_member(user_id)
     if not member:
         try:
@@ -1799,7 +1829,7 @@ async def roles_usuario(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='listar_roles', aliases=['lroles'])
+@bot.command(name='listar_roles', aliases=['lroles', 'roles'])
 async def listar_roles(ctx):
     roles = [r for r in reversed(ctx.guild.roles) if r != ctx.guild.default_role]
     if not roles:
@@ -4157,6 +4187,7 @@ def _build_ayuda_pages() -> list:
          f'`{p}slowmode` `{p}topic` `{p}rc` `{p}cc` `{p}ec` `{p}clone` `{p}nsfw`\n'
          f'`{p}dar_rol` `{p}quitar_rol` `{p}crear_rol` `{p}eliminar_rol`\n'
          f'`{p}r <id> <rol>` — Dar rol por ID de usuario\n'
+         f'`{p}r create <nombre>` — Crear rol nuevo\n'
          f'`{p}listar_roles` `{p}roles_usuario` `{p}rolinfo` `{p}canalinfo`\n'
          f'`{p}v @u` — Dar acceso · `{p}anuncio` `{p}emb`'),
         ('⚙️', 'Configuración del Servidor',
