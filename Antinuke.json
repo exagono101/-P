@@ -1,14 +1,14 @@
 {
-  "id server 1": {
+  "1433231141531549787": {
     "activo": true,
-    "whitelist": [],
+    "whitelist": [@tempvoice],
     "owner_id": null,
     "limites": {
-      "ban": 3,
-      "kick": 3,
-      "roles": 3,
-      "canales": 3,
-      "webhooks": 3
+      "ban": 2,
+      "kick": 2,
+      "roles": 2,
+      "canales": 2,
+      "webhooks": 2
     },
     "ventana": 10,
     "accion": "ban",
